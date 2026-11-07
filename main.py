@@ -53,10 +53,18 @@ RECITERS = {
     "محمود خليل الحصري": "ar.husary",
     "سعد الغامدي": "ar.aymanswoaid",
     "محمد المنشاوي": "ar.minshawi",
+    "محمد رفعت": "rifaat",  # سيرفر خاص - مش من AlQuran Cloud
 }
 
 user_reciter = {}
 user_city = {}
+
+def get_audio_url(code, surah_num):
+    """بيرجع لينك الصوت حسب القارئ"""
+    if code == "rifaat":
+        # الشيخ محمد رفعت - سيرفر mp3quran
+        return f"https://server8.mp3quran.net/rfaat/{surah_num:03d}.mp3"
+    return f"https://cdn.islamic.network/quran/audio-surah/128/{code}/{surah_num}.mp3"
 
 def to_arabic_num(n):
     arabic = "٠١٢٣٤٥٦٧٨٩"
@@ -86,7 +94,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=main_keyboard()
     )
 
-# ================= دالة عامة لإرسال أي سورة =================
 async def send_surah_text(context, chat_id, surah_num, surah_name, intro_text, audio_caption):
     try:
         await context.bot.send_message(chat_id=chat_id, text=intro_text)
@@ -105,8 +112,8 @@ async def send_surah_text(context, chat_id, surah_num, surah_name, intro_text, a
 
 async def send_mulk_reminder(context: ContextTypes.DEFAULT_TYPE):
     await send_surah_text(context, context.job.chat_id, 67, "الملك",
-        "⏰ وقتك مع سورة الملك 🤍\n\nمن قرأها كل ليلة منجية من عذاب القبر، يلا نقرأها سوا قبل النوم:",
-        "🎧 سورة الملك - تذكير يومي")
+        "⏰ وقتك مع سورة الملك بعد العشاء 🤍\n\nمن قرأها كل ليلة منجية من عذاب القبر، يلا نقرأها سوا قبل النوم:",
+        "🎧 سورة الملك - تذكير بعد العشاء")
 
 async def send_waqia_reminder(context: ContextTypes.DEFAULT_TYPE):
     await send_surah_text(context, context.job.chat_id, 56, "الواقعة",
@@ -118,60 +125,77 @@ async def send_kahf_reminder(context: ContextTypes.DEFAULT_TYPE):
         "🕌 جمعة مباركة 🤍\n\nمن قرأ سورة الكهف يوم الجمعة أضاء له من النور ما بين الجمعتين\nيلا نقرأها سوا:",
         "🎧 سورة الكهف - تذكير الجمعة")
 
-# ================= مواقيت الصلاة - الفجر تلقائي =================
-def get_fajr_time(city):
+# ================= مواقيت الصلاة - الفجر والعشاء تلقائي =================
+def get_prayer_times(city):
+    """بيرجع معاد الفجر والعشاء لمدينة معينة"""
     try:
         url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country=Egypt&method=5"
         r = requests.get(url, timeout=10).json()
-        fajr_str = r['data']['timings']['Fajr']
-        hour, minute = map(int, fajr_str.split(":"))
-        minute += 15
-        if minute >= 60:
-            hour += 1
-            minute -= 60
-        if hour >= 24:
-            hour -= 24
-        return hour, minute
+        timings = r['data']['timings']
+        def add_minutes(time_str, add):
+            h, m = map(int, time_str.split(":"))
+            m += add
+            if m >= 60:
+                h += 1
+                m -= 60
+            if h >= 24:
+                h -= 24
+            return h, m
+        fajr = add_minutes(timings['Fajr'], 15)   # بعد الفجر بـ 15 دقيقة
+        isha = add_minutes(timings['Isha'], 15)   # بعد العشاء بـ 15 دقيقة
+        return fajr, isha
     except Exception as e:
-        print(f"Fajr error: {e}")
-        return 5, 30
+        print(f"Prayer error: {e}")
+        return (5, 30), (20, 30)
+
+def get_fajr_time(city):
+    fajr, _ = get_prayer_times(city)
+    return fajr
+
+def get_isha_time(city):
+    _, isha = get_prayer_times(city)
+    return isha
 
 async def schedule_waqia_after_fajr(context, chat_id, user_id, city):
     import datetime
     for j in context.job_queue.get_jobs_by_name(f"waqia_{chat_id}"):
         j.schedule_removal()
-    for j in context.job_queue.get_jobs_by_name(f"waqia_update_{chat_id}"):
-        j.schedule_removal()
-
     hour, minute = get_fajr_time(city)
-    context.job_queue.run_daily(
-        send_waqia_reminder,
-        time=datetime.time(hour=hour, minute=minute),
-        chat_id=chat_id,
-        name=f"waqia_{chat_id}"
-    )
-    context.job_queue.run_daily(
-        update_waqia_fajr_job,
-        time=datetime.time(hour=0, minute=5),
-        chat_id=chat_id,
-        name=f"waqia_update_{chat_id}"
-    )
+    context.job_queue.run_daily(send_waqia_reminder, time=datetime.time(hour=hour, minute=minute), chat_id=chat_id, name=f"waqia_{chat_id}")
     return hour, minute
 
-async def update_waqia_fajr_job(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.job.chat_id
-    user_id = chat_id
-    city = user_city.get(user_id, "Cairo")
+async def schedule_mulk_after_isha(context, chat_id, user_id, city):
     import datetime
-    for j in context.job_queue.get_jobs_by_name(f"waqia_{chat_id}"):
+    for j in context.job_queue.get_jobs_by_name(f"mulk_{chat_id}"):
         j.schedule_removal()
-    hour, minute = get_fajr_time(city)
-    context.job_queue.run_daily(
-        send_waqia_reminder,
-        time=datetime.time(hour=hour, minute=minute),
-        chat_id=chat_id,
-        name=f"waqia_{chat_id}"
-    )
+    hour, minute = get_isha_time(city)
+    context.job_queue.run_daily(send_mulk_reminder, time=datetime.time(hour=hour, minute=minute), chat_id=chat_id, name=f"mulk_{chat_id}")
+    return hour, minute
+
+async def ensure_daily_update_job(context, chat_id):
+    """شغل وظيفة التحديث اليومي مرة واحدة لكل مستخدم"""
+    import datetime
+    exists = context.job_queue.get_jobs_by_name(f"prayer_update_{chat_id}")
+    if not exists:
+        context.job_queue.run_daily(update_prayer_jobs, time=datetime.time(hour=0, minute=5), chat_id=chat_id, name=f"prayer_update_{chat_id}")
+
+async def update_prayer_jobs(context: ContextTypes.DEFAULT_TYPE):
+    """كل يوم بالليل يحدث معاد الفجر والعشاء لكل التذكيرات الشغالة"""
+    import datetime
+    chat_id = context.job.chat_id
+    city = user_city.get(chat_id, "Cairo")
+    # حدث الواقعة لو شغالة
+    if context.job_queue.get_jobs_by_name(f"waqia_{chat_id}"):
+        for j in context.job_queue.get_jobs_by_name(f"waqia_{chat_id}"):
+            j.schedule_removal()
+        h, m = get_fajr_time(city)
+        context.job_queue.run_daily(send_waqia_reminder, time=datetime.time(hour=h, minute=m), chat_id=chat_id, name=f"waqia_{chat_id}")
+    # حدث الملك لو شغالة
+    if context.job_queue.get_jobs_by_name(f"mulk_{chat_id}"):
+        for j in context.job_queue.get_jobs_by_name(f"mulk_{chat_id}"):
+            j.schedule_removal()
+        h, m = get_isha_time(city)
+        context.job_queue.run_daily(send_mulk_reminder, time=datetime.time(hour=h, minute=m), chat_id=chat_id, name=f"mulk_{chat_id}")
 
 # ================= البحث بآية =================
 async def do_search_ayah(keyword, update):
@@ -245,27 +269,53 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(z)
         return
 
+    # ===== تذكير الملك بعد العشاء - تلقائي =====
     if text == "⏰ تذكير سورة الملك":
-        try:
-            import datetime
-            for j in context.job_queue.get_jobs_by_name(f"mulk_{chat_id}"):
-                j.schedule_removal()
-            context.job_queue.run_daily(send_mulk_reminder, time=datetime.time(hour=22, minute=0), chat_id=chat_id, name=f"mulk_{chat_id}")
-            await update.message.reply_text("✅ تم تفعيل تذكير سورة الملك!\n\nكل يوم الساعة 10 مساء هبعتلك سورة الملك كاملة نص + صوت 🤍")
-        except:
-            await update.message.reply_text("التذكير مش شغال في الاستضافة دي، جرب تاني بعد شوية")
+        # لو المدينة متسجلة قبل كده من الواقعة، استخدمها على طول
+        if user_id in user_city:
+            city = user_city[user_id]
+            hour, minute = await schedule_mulk_after_isha(context, chat_id, user_id, city)
+            await ensure_daily_update_job(context, chat_id)
+            await update.message.reply_text(
+                f"✅ تم تفعيل تذكير سورة الملك!\n\n"
+                f"📍 مدينتك: {city}\n"
+                f"🕌 هيبعتلك بعد العشاء بـ 15 دقيقة (الساعة {hour:02d}:{minute:02d})\n\n"
+                f"كل يوم بعد العشاء هبعتلك سورة الملك كاملة نص + صوت 🤍",
+                reply_markup=main_keyboard()
+            )
+        else:
+            context.user_data['mode'] = 'ask_city_mulk'
+            await update.message.reply_text(
+                "⏰ تذكير سورة الملك بعد العشاء 🤍\n\n"
+                "عشان البوت يبعتلك بعد العشاء بتوقيت بلدك بالظبط، ابعت اسم مدينتك 👇\n\n"
+                "مثال: سوهاج - القاهرة - الرياض - جدة - بغداد - الجزائر\n\n"
+                "اكتب اسم مدينتك وابعتها",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🏠 القائمة الرئيسية")]], resize_keyboard=True)
+            )
         return
 
-    # ===== تذكير الواقعة بعد الفجر - تلقائي حسب المدينة =====
+    # ===== تذكير الواقعة بعد الفجر - تلقائي =====
     if text == "⏰ تذكير الواقعة":
-        context.user_data['mode'] = 'ask_city_waqia'
-        await update.message.reply_text(
-            "⏰ تذكير سورة الواقعة بعد الفجر 🤍\n\n"
-            "عشان البوت يبعتلك بعد الفجر بتوقيت بلدك بالظبط، ابعت اسم مدينتك 👇\n\n"
-            "مثال: سوهاج - القاهرة - الرياض - جدة - بغداد - الجزائر\n\n"
-            "اكتب اسم مدينتك وابعتها",
-            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🏠 القائمة الرئيسية")]], resize_keyboard=True)
-        )
+        if user_id in user_city:
+            city = user_city[user_id]
+            hour, minute = await schedule_waqia_after_fajr(context, chat_id, user_id, city)
+            await ensure_daily_update_job(context, chat_id)
+            await update.message.reply_text(
+                f"✅ تم تفعيل تذكير سورة الواقعة!\n\n"
+                f"📍 مدينتك: {city}\n"
+                f"🕌 هيبعتلك بعد الفجر بـ 15 دقيقة (الساعة {hour:02d}:{minute:02d})\n\n"
+                f"كل يوم بعد الفجر هبعتلك سورة الواقعة كاملة نص + صوت 🤍",
+                reply_markup=main_keyboard()
+            )
+        else:
+            context.user_data['mode'] = 'ask_city_waqia'
+            await update.message.reply_text(
+                "⏰ تذكير سورة الواقعة بعد الفجر 🤍\n\n"
+                "عشان البوت يبعتلك بعد الفجر بتوقيت بلدك بالظبط، ابعت اسم مدينتك 👇\n\n"
+                "مثال: سوهاج - القاهرة - الرياض - جدة - بغداد - الجزائر\n\n"
+                "اكتب اسم مدينتك وابعتها",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🏠 القائمة الرئيسية")]], resize_keyboard=True)
+            )
         return
 
     if text == "⏰ تذكير الكهف":
@@ -291,7 +341,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "❌ إلغاء التذكيرات":
         try:
-            for name in [f"mulk_{chat_id}", f"waqia_{chat_id}", f"kahf_{chat_id}", f"waqia_update_{chat_id}"]:
+            for name in [f"mulk_{chat_id}", f"waqia_{chat_id}", f"kahf_{chat_id}", f"prayer_update_{chat_id}"]:
                 for j in context.job_queue.get_jobs_by_name(name):
                     j.schedule_removal()
             await update.message.reply_text("تم إلغاء كل التذكيرات ❌\n(الملك - الواقعة - الكهف)")
@@ -308,13 +358,32 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("حاول تاني")
         return
 
-    # ===== لو المستخدم بيبعت مدينته للواقعة =====
+    # ===== استقبال المدينة للملك =====
+    if context.user_data.get('mode') == 'ask_city_mulk':
+        city = text.strip()
+        user_city[user_id] = city
+        context.user_data['mode'] = None
+        await update.message.reply_text(f"جاري معرفة معاد العشاء في {city} ...")
+        hour, minute = await schedule_mulk_after_isha(context, chat_id, user_id, city)
+        await ensure_daily_update_job(context, chat_id)
+        await update.message.reply_text(
+            f"✅ تم تفعيل تذكير سورة الملك!\n\n"
+            f"📍 مدينتك: {city}\n"
+            f"🕌 هيبعتلك بعد العشاء بـ 15 دقيقة (الساعة {hour:02d}:{minute:02d})\n\n"
+            f"كل يوم بعد العشاء هبعتلك سورة الملك كاملة نص + صوت 🤍\n"
+            f"وكل يوم البوت هيحدث المعاد تلقائي",
+            reply_markup=main_keyboard()
+        )
+        return
+
+    # ===== استقبال المدينة للواقعة =====
     if context.user_data.get('mode') == 'ask_city_waqia':
         city = text.strip()
         user_city[user_id] = city
         context.user_data['mode'] = None
         await update.message.reply_text(f"جاري معرفة معاد الفجر في {city} ...")
         hour, minute = await schedule_waqia_after_fajr(context, chat_id, user_id, city)
+        await ensure_daily_update_job(context, chat_id)
         await update.message.reply_text(
             f"✅ تم تفعيل تذكير سورة الواقعة!\n\n"
             f"📍 مدينتك: {city}\n"
@@ -405,7 +474,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text("حصلت مشكلة في تحميل النص، حاول تاني")
 
-        audio_url = f"https://cdn.islamic.network/quran/audio-surah/128/{code}/{n}.mp3"
+        audio_url = get_audio_url(code, n)
         await update.message.reply_audio(
             audio=audio_url,
             title=text,
