@@ -17,7 +17,6 @@ RECITERS = {
 
 user_reciter = {}
 
-# تحويل الأرقام لأرقام عربية مشرقة ١٢٣
 def to_arabic_num(n):
     arabic = "٠١٢٣٤٥٦٧٨٩"
     return "".join(arabic[int(d)] for d in str(n))
@@ -78,33 +77,41 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         msg = await update.message.reply_text(f"لقد اخترت سورة {text} من القارئ {reciter_name} برواية حفص عن عاصم، جاري التحميل ..")
 
-        # 1 - نص السورة بالشكل الجديد - من غير زر فتح المصحف
+        # 1 - نص السورة بالشكل الجديد - تقسيم ذكي
         try:
-            # quran-uthmani = الرسم العثماني الصح
             data = requests.get(f"https://api.alquran.cloud/v1/surah/{n}/quran-uthmani").json()['data']
             ayahs = data['ayahs']
-            # لو أول آية فيها البسملة ودي مش الفاتحة، بنشيلها لأنها هتتكرر في الهيدر
-            full = ""
-            for a in ayahs:
-                t = a['text']
-                # شيل البسملة من أول آية لو موجودة عشان متتكررش، ماعدا الفاتحة والتوبة
-                if a['numberInSurah'] == 1 and n not in [1, 9]:
-                    t = t.replace("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", "").strip()
-                full += f"{t} ﴿{to_arabic_num(a['numberInSurah'])}﴾ "
 
-            # الشكل النهائي
             header = f"✦ ━━━━ سورة {text} ━━━━ ✦\n\n"
             if n != 9:
                 header += "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ\n\n"
             footer = "\n\n━━━ صدق الله العظيم ━━━"
-            final_text = header + full.strip() + footer
 
-            for i in range(0, len(final_text), 4000):
-                await update.message.reply_text(final_text[i:i+4000])
+            # تقسيم ذكي: بنجمع الآيات آية آية، ومنقطعش في نص الآية أبدا
+            chunks = []
+            current = header
+            for a in ayahs:
+                t = a['text']
+                if a['numberInSurah'] == 1 and n not in [1, 9]:
+                    t = t.replace("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", "").strip()
+                line = f"{t} ﴿{to_arabic_num(a['numberInSurah'])}﴾ "
+                # لو الرسالة هتعدي 3800 حرف، نقفلها ونبدأ رسالة جديدة
+                if len(current) + len(line) > 3800:
+                    chunks.append(current)
+                    current = ""
+                current += line
+            current += footer
+            chunks.append(current)
+
+            for idx, chunk in enumerate(chunks, 1):
+                if len(chunks) > 1:
+                    await update.message.reply_text(f"— جزء {idx}/{len(chunks)} —\n\n{chunk}")
+                else:
+                    await update.message.reply_text(chunk)
         except Exception as e:
             await update.message.reply_text("حصلت مشكلة في تحميل النص، حاول تاني")
 
-        # 2 - صوت السورة كامل - من غير أي زرار
+        # 2 - صوت السورة كامل - من غير زر فتح المصحف
         audio_url = f"https://cdn.islamic.network/quran/audio-surah/128/{code}/{n}.mp3"
         await update.message.reply_audio(
             audio=audio_url,
