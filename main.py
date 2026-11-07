@@ -56,7 +56,6 @@ RECITERS = {
     "محمد رفعت": "ar.muhammadrafat",
 }
 
-# السور المتوفرة بصوت الشيخ محمد رفعت فقط - زي بوت IslamicQuranBot
 RIFAAT_SURAHS = [
     "الفاتحة","البقرة","يونس","هود","يوسف","الإسراء","الكهف","مريم","طه",
     "الفتح","القمر","الرحمن","الواقعة","الحاقة","الجن","المزمل","القيامة",
@@ -77,7 +76,6 @@ _rifaat_server = None
 _rifaat_available = None
 
 def load_rifaat_from_api():
-    """بيسأل mp3quran API على السيرفر الصح لمحمد رفعت - زي IslamicQuranBot"""
     global _rifaat_server, _rifaat_available
     if _rifaat_server is not None:
         return _rifaat_server, _rifaat_available
@@ -106,7 +104,6 @@ def load_rifaat_from_api():
     return None, None
 
 def get_rifaat_audio(surah_num):
-    """بيرجع لينك محمد رفعت من السيرفر الصح اللي رجعه الـ API"""
     if surah_num in _rifaat_cache:
         return _rifaat_cache[surah_num]
     server, available = load_rifaat_from_api()
@@ -119,12 +116,10 @@ def get_rifaat_audio(surah_num):
     return None
 
 def get_audio_url(code, surah_num):
-    """بيرجع لينك الصوت حسب القارئ"""
     if code == "ar.muhammadrafat":
         url = get_rifaat_audio(surah_num)
         if url:
             return url
-        # لو الـ API فشل، رجع None والـ try/except هيتصرف
         return None
     return f"https://cdn.islamic.network/quran/audio-surah/128/{code}/{surah_num}.mp3"
 
@@ -157,11 +152,99 @@ def main_keyboard():
         [KeyboardButton("⏰ تذكير الكهف"), KeyboardButton("❌ إلغاء التذكيرات")],
     ], resize_keyboard=True)
 
+# ================= START - عرض المميزات =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "أهلاً بيك في بوت القرآن الكريم 🤍\nاختر من القائمة:",
-        reply_markup=main_keyboard()
+    text = (
+        "أهلاً بيك في بوت القرآن الكريم 🤍\n"
+        "━━━━━━━━━━━━━━\n"
+        "📖 بوتك اليومي للقرآن والأذكار\n\n"
+        "✨ مميزات البوت:\n\n"
+        "🎧 الاستماع للقرآن\n"
+        "اسمع أي سورة بأصوات 6 قراء\n"
+        "• عبدالباسط عبدالصمد\n"
+        "• مشاري العفاسي\n"
+        "• الحصري\n"
+        "• سعد الغامدي\n"
+        "• المنشاوي\n"
+        "• محمد رفعت\n\n"
+        "📖 قراءة السورة\n"
+        "نص السورة كامل + معلوماتها + فضلها + سبب نزولها\n\n"
+        "📖 تفسير السورة\n"
+        "تفسير ميسر آية آية\n\n"
+        "🔍 البحث بآية\n"
+        "اكتب كلمة زي الصبر - الجنة - الرحمة وهيجيبلك كل الآيات اللي فيها\n\n"
+        "📿 آية اليوم\n"
+        "آية عشوائية كل مرة تدوس عليها\n\n"
+        "🌅 أذكار الصباح | 🌙 أذكار المساء\n"
+        "أذكار كاملة\n\n"
+        "⏰ تذكيرات تلقائية حسب بلدك\n"
+        "• سورة الملك بعد العشاء\n"
+        "• سورة الواقعة بعد الفجر\n"
+        "• سورة الكهف كل جمعة\n\n"
+        "━━━━━━━━━━━━━━\n"
+        "👇 اختر الميزة اللي عايزها:"
     )
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎧 الاستماع للقرآن", callback_data="feat:listen")],
+        [InlineKeyboardButton("📖 قراءة السورة", callback_data="feat:read")],
+        [InlineKeyboardButton("📖 تفسير السورة", callback_data="feat:tafsir")],
+        [InlineKeyboardButton("🔍 البحث بآية", callback_data="feat:search")],
+        [InlineKeyboardButton("📿 آية اليوم", callback_data="feat:ayah")],
+        [InlineKeyboardButton("🌅 أذكار الصباح", callback_data="feat:sabah")],
+        [InlineKeyboardButton("🌙 أذكار المساء", callback_data="feat:masa")],
+        [InlineKeyboardButton("🎙️ تغيير القارئ", callback_data="feat:reciter")],
+        [InlineKeyboardButton("⏰ تذكير الملك بعد العشاء", callback_data="feat:mulk")],
+        [InlineKeyboardButton("⏰ تذكير الواقعة بعد الفجر", callback_data="feat:waqia")],
+        [InlineKeyboardButton("⏰ تذكير الكهف الجمعة", callback_data="feat:kahf")],
+    ])
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(text, reply_markup=kb)
+    else:
+        await update.message.reply_text(text, reply_markup=kb)
+        await update.message.reply_text("أو استخدم القايمة اللي تحت 👇", reply_markup=main_keyboard())
+
+async def feature_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    feat = query.data.split(":")[1]
+    user_id = query.from_user.id
+
+    if feat == "listen" or feat == "read":
+        context.user_data['mode'] = 'read'
+        code_now = user_reciter.get(user_id, "ar.abdulbasitmurattal")
+        if code_now == "ar.muhammadrafat":
+            await query.message.reply_text("اختر من السور المتوفرة بصوت الشيخ محمد رفعت 👇", reply_markup=rifaat_keyboard())
+        else:
+            await query.message.reply_text("اختر السورة 👇", reply_markup=surah_keyboard())
+    elif feat == "tafsir":
+        context.user_data['mode'] = 'tafsir'
+        await query.message.reply_text("اختر السورة اللي عايز تفسيرها 👇", reply_markup=surah_keyboard())
+    elif feat == "search":
+        context.user_data['mode'] = 'search_ayah'
+        await query.message.reply_text("🔍 ابعت الكلمة اللي عايز تدور عليها\nمثال: الصبر - الجنة - الرحمة")
+    elif feat == "ayah":
+        try:
+            r = requests.get("https://api.alquran.cloud/v1/ayah/random/quran-uthmani").json()
+            ayah = r['data']
+            await query.message.reply_text(f"{ayah['text']} ﴿{to_arabic_num(ayah['numberInSurah'])}﴾\n\n— سورة {ayah['surah']['name']}")
+        except:
+            await query.message.reply_text("حاول تاني")
+    elif feat == "sabah":
+        for z in AZKAR_SABAH:
+            await query.message.reply_text(z)
+    elif feat == "masa":
+        for z in AZKAR_MASA:
+            await query.message.reply_text(z)
+    elif feat == "reciter":
+        kb = [[InlineKeyboardButton(name, callback_data=f"reciter:{code}")] for name, code in RECITERS.items()]
+        await query.message.reply_text("اختر القارئ:", reply_markup=InlineKeyboardMarkup(kb))
+    elif feat == "mulk":
+        await query.message.reply_text("دوس على زرار ⏰ تذكير سورة الملك من القايمة اللي تحت 👇", reply_markup=main_keyboard())
+    elif feat == "waqia":
+        await query.message.reply_text("دوس على زرار ⏰ تذكير الواقعة من القايمة اللي تحت 👇", reply_markup=main_keyboard())
+    elif feat == "kahf":
+        await query.message.reply_text("دوس على زرار ⏰ تذكير الكهف من القايمة اللي تحت 👇", reply_markup=main_keyboard())
 
 async def send_surah_text(context, chat_id, surah_num, surah_name, intro_text, audio_caption):
     try:
@@ -194,7 +277,6 @@ async def send_kahf_reminder(context: ContextTypes.DEFAULT_TYPE):
         "🕌 جمعة مباركة 🤍\n\nمن قرأ سورة الكهف يوم الجمعة أضاء له من النور ما بين الجمعتين\nيلا نقرأها سوا:",
         "🎧 سورة الكهف - تذكير الجمعة")
 
-# ================= مواقيت الصلاة - الفجر والعشاء تلقائي =================
 def get_prayer_times(city):
     try:
         url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country=Egypt&method=5"
@@ -261,7 +343,6 @@ async def update_prayer_jobs(context: ContextTypes.DEFAULT_TYPE):
         h, m = get_isha_time(city)
         context.job_queue.run_daily(send_mulk_reminder, time=datetime.time(hour=h, minute=m), chat_id=chat_id, name=f"mulk_{chat_id}")
 
-# ================= البحث بآية =================
 async def do_search_ayah(keyword, update):
     if len(keyword) < 2:
         await update.message.reply_text("❌ اكتب كلمة أطول من حرف، مثال: الصبر - الجنة - الرحمة")
@@ -546,9 +627,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text("حصلت مشكلة في تحميل النص، حاول تاني")
 
-        # ===== إرسال الصوت - مع حماية من الفشل =====
         audio_url = get_audio_url(code, n)
-        # لو رفعت والـ API ملقاش لينك، ابعت رسالة واضحة من غير ما تحاول لينك غلط
         if code == "ar.muhammadrafat" and audio_url is None:
             await update.message.reply_text(
                 f"⚠️ سورة {text} مش متوفرة بصوت الشيخ محمد رفعت في السيرفرات حاليا\n"
@@ -616,6 +695,7 @@ if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(reciter_callback, pattern="^reciter:"))
+    app.add_handler(CallbackQueryHandler(feature_callback, pattern="^feat:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     print("Bot is running...")
     app.run_polling()
