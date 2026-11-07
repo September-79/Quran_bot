@@ -53,8 +53,21 @@ RECITERS = {
     "محمود خليل الحصري": "ar.husary",
     "سعد الغامدي": "ar.aymanswoaid",
     "محمد المنشاوي": "ar.minshawi",
-    "محمد رفعت": "rifaat",  # سيرفر خاص - مش من AlQuran Cloud
+    "محمد رفعت": "rifaat",
 }
+
+# السور المتوفرة بصوت الشيخ محمد رفعت فقط - زي بوت IslamicQuranBot
+# باقي السور مش مسجلة ليه أصلا لأنه ملوش مصحف كامل
+RIFAAT_SURAHS = [
+    "الفاتحة","البقرة","يونس","هود","يوسف","الإسراء","الكهف","مريم","طه",
+    "الفتح","القمر","الرحمن","الواقعة","الحاقة","الجن","المزمل","القيامة",
+    "الانسان","المرسلات","النبأ","النازعات","التكوير","الإنفطار","المطففين",
+    "البروج","الطارق","الأعلى","الغاشية","الفجر","العلق","البينة","العاديات",
+    "القارعة","التكاثر","الهمزة","الفيل","قريش","الماعون","الكوثر","الكافرون",
+    "النصر","المسد","الإخلاص","الفلق","الناس","يس","الصافات","الدخان","الملك",
+    "القلم","الحشر","الجمعة","التغابن","الطلاق","التحريم","نوح","المدثر","الضحى",
+    "الشرح","التين","القدر","الزلزلة","العصر"
+]
 
 user_reciter = {}
 user_city = {}
@@ -62,7 +75,16 @@ user_city = {}
 def get_audio_url(code, surah_num):
     """بيرجع لينك الصوت حسب القارئ"""
     if code == "rifaat":
-        # الشيخ محمد رفعت - سيرفر mp3quran
+        # هنجرب كل سيرفرات mp3quran لحد ما واحد يشتغل
+        # لأن ملفات رفعت متوزعة ومش كلها على سيرفر واحد
+        for server in [8, 12, 10, 11, 7, 9, 13, 14]:
+            url = f"https://server{server}.mp3quran.net/rfaat/{surah_num:03d}.mp3"
+            try:
+                r = requests.head(url, timeout=5)
+                if r.status_code == 200:
+                    return url
+            except:
+                continue
         return f"https://server8.mp3quran.net/rfaat/{surah_num:03d}.mp3"
     return f"https://cdn.islamic.network/quran/audio-surah/128/{code}/{surah_num}.mp3"
 
@@ -74,6 +96,13 @@ def surah_keyboard():
     rows = []
     for i in range(0, len(SURAHS), 4):
         rows.append([KeyboardButton(s) for s in SURAHS[i:i+4]])
+    rows.append([KeyboardButton("🏠 القائمة الرئيسية")])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+def rifaat_keyboard():
+    rows = []
+    for i in range(0, len(RIFAAT_SURAHS), 4):
+        rows.append([KeyboardButton(s) for s in RIFAAT_SURAHS[i:i+4]])
     rows.append([KeyboardButton("🏠 القائمة الرئيسية")])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
@@ -127,7 +156,6 @@ async def send_kahf_reminder(context: ContextTypes.DEFAULT_TYPE):
 
 # ================= مواقيت الصلاة - الفجر والعشاء تلقائي =================
 def get_prayer_times(city):
-    """بيرجع معاد الفجر والعشاء لمدينة معينة"""
     try:
         url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country=Egypt&method=5"
         r = requests.get(url, timeout=10).json()
@@ -141,8 +169,8 @@ def get_prayer_times(city):
             if h >= 24:
                 h -= 24
             return h, m
-        fajr = add_minutes(timings['Fajr'], 15)   # بعد الفجر بـ 15 دقيقة
-        isha = add_minutes(timings['Isha'], 15)   # بعد العشاء بـ 15 دقيقة
+        fajr = add_minutes(timings['Fajr'], 15)
+        isha = add_minutes(timings['Isha'], 15)
         return fajr, isha
     except Exception as e:
         print(f"Prayer error: {e}")
@@ -173,24 +201,20 @@ async def schedule_mulk_after_isha(context, chat_id, user_id, city):
     return hour, minute
 
 async def ensure_daily_update_job(context, chat_id):
-    """شغل وظيفة التحديث اليومي مرة واحدة لكل مستخدم"""
     import datetime
     exists = context.job_queue.get_jobs_by_name(f"prayer_update_{chat_id}")
     if not exists:
         context.job_queue.run_daily(update_prayer_jobs, time=datetime.time(hour=0, minute=5), chat_id=chat_id, name=f"prayer_update_{chat_id}")
 
 async def update_prayer_jobs(context: ContextTypes.DEFAULT_TYPE):
-    """كل يوم بالليل يحدث معاد الفجر والعشاء لكل التذكيرات الشغالة"""
     import datetime
     chat_id = context.job.chat_id
     city = user_city.get(chat_id, "Cairo")
-    # حدث الواقعة لو شغالة
     if context.job_queue.get_jobs_by_name(f"waqia_{chat_id}"):
         for j in context.job_queue.get_jobs_by_name(f"waqia_{chat_id}"):
             j.schedule_removal()
         h, m = get_fajr_time(city)
         context.job_queue.run_daily(send_waqia_reminder, time=datetime.time(hour=h, minute=m), chat_id=chat_id, name=f"waqia_{chat_id}")
-    # حدث الملك لو شغالة
     if context.job_queue.get_jobs_by_name(f"mulk_{chat_id}"):
         for j in context.job_queue.get_jobs_by_name(f"mulk_{chat_id}"):
             j.schedule_removal()
@@ -235,7 +259,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in ["🎧 الاستماع للقرآن", "📖 قراءة السورة", "🔍 بحث باسم السورة"]:
         context.user_data['mode'] = 'read'
-        await update.message.reply_text("اختر السورة 👇", reply_markup=surah_keyboard())
+        # لو القارئ الحالي رفعت، اظهر السور المتوفرة بس
+        code_now = user_reciter.get(user_id, "ar.abdulbasitmurattal")
+        if code_now == "rifaat":
+            await update.message.reply_text("اختر من السور المتوفرة بصوت الشيخ محمد رفعت 👇", reply_markup=rifaat_keyboard())
+        else:
+            await update.message.reply_text("اختر السورة 👇", reply_markup=surah_keyboard())
         return
 
     if text == "🔍 البحث بآية":
@@ -269,9 +298,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(z)
         return
 
-    # ===== تذكير الملك بعد العشاء - تلقائي =====
     if text == "⏰ تذكير سورة الملك":
-        # لو المدينة متسجلة قبل كده من الواقعة، استخدمها على طول
         if user_id in user_city:
             city = user_city[user_id]
             hour, minute = await schedule_mulk_after_isha(context, chat_id, user_id, city)
@@ -294,7 +321,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ===== تذكير الواقعة بعد الفجر - تلقائي =====
     if text == "⏰ تذكير الواقعة":
         if user_id in user_city:
             city = user_city[user_id]
@@ -358,7 +384,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("حاول تاني")
         return
 
-    # ===== استقبال المدينة للملك =====
     if context.user_data.get('mode') == 'ask_city_mulk':
         city = text.strip()
         user_city[user_id] = city
@@ -376,7 +401,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ===== استقبال المدينة للواقعة =====
     if context.user_data.get('mode') == 'ask_city_waqia':
         city = text.strip()
         user_city[user_id] = city
@@ -406,6 +430,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for k, v in RECITERS.items():
             if v == code:
                 reciter_name = k
+
+        # لو رفعت والسورة مش متوفرة ليه، نبهه قبل ما نكمل
+        if code == "rifaat" and text not in RIFAAT_SURAHS:
+            await update.message.reply_text(
+                f"⚠️ سورة {text} مش متوفرة بصوت الشيخ محمد رفعت\n\n"
+                f"الشيخ رفعت ليه سور معينة بس، زي بوت IslamicQuranBot بالظبط.\n"
+                f"اختر سورة من القايمة دي 👇",
+                reply_markup=rifaat_keyboard()
+            )
+            return
 
         if mode == 'tafsir':
             await update.message.reply_text(f"جاري تحميل تفسير سورة {text} 📖 ...")
@@ -474,14 +508,37 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await update.message.reply_text("حصلت مشكلة في تحميل النص، حاول تاني")
 
+        # ===== إرسال الصوت - مع حماية من الفشل =====
         audio_url = get_audio_url(code, n)
-        await update.message.reply_audio(
-            audio=audio_url,
-            title=text,
-            performer=reciter_name,
-            caption=f"🎧 سورة {text} - {reciter_name}"
-        )
-        await msg.delete()
+        try:
+            await update.message.reply_audio(
+                audio=audio_url,
+                title=text,
+                performer=reciter_name,
+                caption=f"🎧 سورة {text} - {reciter_name}"
+            )
+        except Exception as e:
+            print(f"Audio error {reciter_name} surah {n}: {e}")
+            if code == "rifaat":
+                await update.message.reply_text(
+                    f"⚠️ سورة {text} مش متوفرة بصوت الشيخ محمد رفعت في السيرفرات حاليا\n"
+                    f"جرب سورة تانية من القايمة، أو اسمعها بصوت عبدالباسط 👇"
+                )
+                try:
+                    await update.message.reply_audio(
+                        audio=f"https://cdn.islamic.network/quran/audio-surah/128/ar.abdulbasitmurattal/{n}.mp3",
+                        title=text,
+                        performer="عبدالباسط عبدالصمد",
+                        caption=f"🎧 سورة {text} - عبدالباسط عبدالصمد"
+                    )
+                except:
+                    pass
+            else:
+                await update.message.reply_text("⚠️ الصوت مش متوفر دلوقتي، النص اتبعت كامل فوق 👆")
+        try:
+            await msg.delete()
+        except:
+            pass
         return
 
     await update.message.reply_text("اكتب اسم سورة صحيح أو اختر من القائمة 👇", reply_markup=surah_keyboard())
@@ -493,7 +550,14 @@ async def reciter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_reciter[query.from_user.id] = code
     name = [k for k,v in RECITERS.items() if v==code][0]
     await query.edit_message_text(f"تم اختيار القارئ: {name} ✅\nالآن اختر السورة:")
-    await query.message.reply_text("اختر السورة 👇", reply_markup=surah_keyboard())
+    # لو رفعت، اظهر السور المتوفرة بس - زي IslamicQuranBot
+    if code == "rifaat":
+        await query.message.reply_text(
+            "⚠️ تنبيه: الشيخ محمد رفعت ليه سور معينة بس مسجلة، مش المصحف كله\nاختر من السور المتوفرة 👇",
+            reply_markup=rifaat_keyboard()
+        )
+    else:
+        await query.message.reply_text("اختر السورة 👇", reply_markup=surah_keyboard())
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
