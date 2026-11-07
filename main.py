@@ -23,7 +23,6 @@ SURAH_INFO = {
     "الكافرون": {"virtue": "تعدل ربع القرآن، وهي براءة من الشرك.", "reason": "نزلت بمكة."},
     "النصر": {"virtue": "تعدل ربع القرآن، وهي آخر سورة نزلت كاملة.", "reason": "نزلت بالمدينة في حجة الوداع."},
     "القدر": {"virtue": "ليلة القدر خير من ألف شهر.", "reason": "نزلت بمكة."},
-    "الفاتحة": {"virtue": "أعظم سورة في القرآن.", "reason": "نزلت بمكة."},
 }
 
 AZKAR_SABAH = [
@@ -76,7 +75,8 @@ def main_keyboard():
         [KeyboardButton("📖 تفسير السورة"), KeyboardButton("🔍 بحث باسم السورة")],
         [KeyboardButton("🔍 البحث بآية")],
         [KeyboardButton("🌅 أذكار الصباح"), KeyboardButton("🌙 أذكار المساء")],
-        [KeyboardButton("⏰ تذكير سورة الملك"), KeyboardButton("❌ إلغاء التذكير")],
+        [KeyboardButton("⏰ تذكير سورة الملك"), KeyboardButton("⏰ تذكير الواقعة")],
+        [KeyboardButton("⏰ تذكير الكهف"), KeyboardButton("❌ إلغاء التذكيرات")],
     ], resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,25 +85,42 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=main_keyboard()
     )
 
-# وظيفة التذكير اليومي - سورة الملك الساعة 10 مساء
-async def send_mulk_reminder(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.job.chat_id
+# ================= دالة عامة لإرسال أي سورة =================
+async def send_surah_text(context, chat_id, surah_num, surah_name, intro_text, audio_caption):
     try:
-        await context.bot.send_message(chat_id=chat_id, text="⏰ وقتك مع سورة الملك 🤍\n\nمن قرأها كل ليلة منجية من عذاب القبر، يلا نقرأها سوا قبل النوم:")
-        data = requests.get("https://api.alquran.cloud/v1/surah/67/quran-uthmani").json()['data']
+        await context.bot.send_message(chat_id=chat_id, text=intro_text)
+        data = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/quran-uthmani").json()['data']
         full = ""
         for a in data['ayahs']:
             full += f"{a['text']} ﴿{to_arabic_num(a['numberInSurah'])}﴾ "
-        header = "✦ ━━━━ سورة الملك ━━━━ ✦\n\nبِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ\n\n"
+        header = f"✦ ━━━━ سورة {surah_name} ━━━━ ✦\n\nبِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ\n\n"
         footer = "\n\n━━━ صدق الله العظيم ━━━"
         text = header + full + footer
         for i in range(0, len(text), 3800):
             await context.bot.send_message(chat_id=chat_id, text=text[i:i+3800])
-        await context.bot.send_audio(chat_id=chat_id, audio="https://cdn.islamic.network/quran/audio-surah/128/ar.abdulbasitmurattal/67.mp3", title="الملك", performer="عبدالباسط عبدالصمد", caption="🎧 سورة الملك - تذكير يومي")
+        await context.bot.send_audio(chat_id=chat_id, audio=f"https://cdn.islamic.network/quran/audio-surah/128/ar.abdulbasitmurattal/{surah_num}.mp3", title=surah_name, performer="عبدالباسط عبدالصمد", caption=audio_caption)
     except Exception as e:
-        await context.bot.send_message(chat_id=chat_id, text="وقت سورة الملك 🤍\nافتحها من هنا: https://quran.com/67")
+        await context.bot.send_message(chat_id=chat_id, text=f"وقت سورة {surah_name} 🤍\nافتحها من هنا: https://quran.com/{surah_num}")
 
-# ================= البحث بآية - جديد =================
+# وظيفة التذكير اليومي - سورة الملك الساعة 10 مساء
+async def send_mulk_reminder(context: ContextTypes.DEFAULT_TYPE):
+    await send_surah_text(context, context.job.chat_id, 67, "الملك",
+        "⏰ وقتك مع سورة الملك 🤍\n\nمن قرأها كل ليلة منجية من عذاب القبر، يلا نقرأها سوا قبل النوم:",
+        "🎧 سورة الملك - تذكير يومي")
+
+# ===== تذكير الواقعة - جديد - كل يوم 9 مساء بعد العشاء =====
+async def send_waqia_reminder(context: ContextTypes.DEFAULT_TYPE):
+    await send_surah_text(context, context.job.chat_id, 56, "الواقعة",
+        "⏰ وقتك مع سورة الواقعة 🤍\n\nمن قرأها كل ليلة لم تصبه فاقة أبدا، وهي سورة الغنى والرزق\nيلا نقرأها سوا بعد صلاة العشاء:",
+        "🎧 سورة الواقعة - تذكير يومي")
+
+# ===== تذكير الكهف - جديد - كل جمعة 10 صباحا =====
+async def send_kahf_reminder(context: ContextTypes.DEFAULT_TYPE):
+    await send_surah_text(context, context.job.chat_id, 18, "الكهف",
+        "🕌 جمعة مباركة 🤍\n\nمن قرأ سورة الكهف يوم الجمعة أضاء له من النور ما بين الجمعتين\nيلا نقرأها سوا:",
+        "🎧 سورة الكهف - تذكير الجمعة")
+
+# ================= البحث بآية =================
 async def do_search_ayah(keyword, update):
     if len(keyword) < 2:
         await update.message.reply_text("❌ اكتب كلمة أطول من حرف، مثال: الصبر - الجنة - الرحمة")
@@ -144,7 +161,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("اختر السورة 👇", reply_markup=surah_keyboard())
         return
 
-    # ===== البحث بآية - جديد =====
     if text == "🔍 البحث بآية":
         context.user_data['mode'] = 'search_ayah'
         await update.message.reply_text(
@@ -176,17 +192,40 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(z)
         return
 
+    # ===== تذكير الملك =====
     if text == "⏰ تذكير سورة الملك":
         try:
-            # شيل أي تذكير قديم الأول
-            current_jobs = context.job_queue.get_jobs_by_name(str(chat_id))
-            for j in current_jobs:
-                j.schedule_removal()
-            # كل يوم الساعة 22:00 بتوقيت مصر
             import datetime
-            context.job_queue.run_daily(send_mulk_reminder, time=datetime.time(hour=22, minute=0), chat_id=chat_id, name=str(chat_id))
-            await update.message.reply_text("✅ تم تفعيل التذكير اليومي!\n\nكل يوم الساعة 10 مساء هبعتلك سورة الملك كاملة نص + صوت قبل النوم 🤍\n\nلو حابب تلغيه دوس ❌ إلغاء التذكير")
-        except Exception as e:
+            for j in context.job_queue.get_jobs_by_name(f"mulk_{chat_id}"):
+                j.schedule_removal()
+            context.job_queue.run_daily(send_mulk_reminder, time=datetime.time(hour=22, minute=0), chat_id=chat_id, name=f"mulk_{chat_id}")
+            await update.message.reply_text("✅ تم تفعيل تذكير سورة الملك!\n\nكل يوم الساعة 10 مساء هبعتلك سورة الملك كاملة نص + صوت 🤍")
+        except:
+            await update.message.reply_text("التذكير مش شغال في الاستضافة دي، جرب تاني بعد شوية")
+        return
+
+    # ===== تذكير الواقعة - جديد =====
+    if text == "⏰ تذكير الواقعة":
+        try:
+            import datetime
+            for j in context.job_queue.get_jobs_by_name(f"waqia_{chat_id}"):
+                j.schedule_removal()
+            context.job_queue.run_daily(send_waqia_reminder, time=datetime.time(hour=21, minute=0), chat_id=chat_id, name=f"waqia_{chat_id}")
+            await update.message.reply_text("✅ تم تفعيل تذكير سورة الواقعة!\n\nكل يوم الساعة 9 مساء بعد صلاة العشاء هبعتلك سورة الواقعة كاملة نص + صوت 🤍\n\nسورة الغنى والرزق، من قرأها كل ليلة لم تصبه فاقة أبدا")
+        except:
+            await update.message.reply_text("التذكير مش شغال في الاستضافة دي، جرب تاني بعد شوية")
+        return
+
+    # ===== تذكير الكهف - جديد =====
+    if text == "⏰ تذكير الكهف":
+        try:
+            import datetime
+            for j in context.job_queue.get_jobs_by_name(f"kahf_{chat_id}"):
+                j.schedule_removal()
+            # 4 = الجمعة (الاثنين 0 ... الجمعة 4)
+            context.job_queue.run_daily(send_kahf_reminder, time=datetime.time(hour=10, minute=0), days=(4,), chat_id=chat_id, name=f"kahf_{chat_id}")
+            await update.message.reply_text("✅ تم تفعيل تذكير سورة الكهف!\n\nكل يوم جمعة الساعة 10 صباحا هبعتلك سورة الكهف كاملة نص + صوت 🕌\n\nمن قرأها يوم الجمعة أضاء له من النور ما بين الجمعتين")
+        except:
             await update.message.reply_text("التذكير مش شغال في الاستضافة دي، جرب تاني بعد شوية")
         return
 
@@ -200,6 +239,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("مفيش تذكير شغال حاليا")
         return
 
+    # ===== إلغاء كل التذكيرات - جديد =====
+    if text == "❌ إلغاء التذكيرات":
+        try:
+            for name in [f"mulk_{chat_id}", f"waqia_{chat_id}", f"kahf_{chat_id}"]:
+                for j in context.job_queue.get_jobs_by_name(name):
+                    j.schedule_removal()
+            await update.message.reply_text("تم إلغاء كل التذكيرات ❌\n(الملك - الواقعة - الكهف)")
+        except:
+            await update.message.reply_text("مفيش تذكير شغال حاليا")
+        return
+
     if text == "📿 آية اليوم":
         try:
             r = requests.get("https://api.alquran.cloud/v1/ayah/random/quran-uthmani").json()
@@ -209,7 +259,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("حاول تاني")
         return
 
-    # ===== لو المستخدم في وضع البحث بآية =====
     if context.user_data.get('mode') == 'search_ayah':
         await do_search_ayah(text, update)
         return
@@ -223,11 +272,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if v == code:
                 reciter_name = k
 
-        # ===== وضع التفسير =====
         if mode == 'tafsir':
             await update.message.reply_text(f"جاري تحميل تفسير سورة {text} 📖 ...")
             try:
-                # النص الأصلي + التفسير الميسر
                 orig = requests.get(f"https://api.alquran.cloud/v1/surah/{n}/quran-uthmani").json()['data']['ayahs']
                 tafsir = requests.get(f"https://api.alquran.cloud/v1/surah/{n}/ar.muyassar").json()['data']['ayahs']
                 for o, t in zip(orig, tafsir):
@@ -239,7 +286,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['mode'] = 'read'
             return
 
-        # ===== وضع القراءة العادي =====
         msg = await update.message.reply_text(f"لقد اخترت سورة {text} من القارئ {reciter_name} برواية حفص عن عاصم، جاري التحميل ..")
         try:
             data = requests.get(f"https://api.alquran.cloud/v1/surah/{n}/quran-uthmani").json()['data']
