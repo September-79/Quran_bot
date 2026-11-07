@@ -73,7 +73,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         msg = await update.message.reply_text(f"لقد اخترت سورة {text} من القارئ {reciter_name} برواية حفص عن عاصم - المصحف الموجود , ستتصل لك في لحظات ..")
 
-        # 1 - نص السورة كامل
         try:
             data = requests.get(f"https://api.alquran.cloud/v1/surah/{n}").json()['data']
             full_text = "\n".join([f"{a['text']} ﴿{a['numberInSurah']}﴾" for a in data['ayahs']])
@@ -82,9 +81,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
-        # 2 - صوت السورة كامل - مش آية واحدة
         audio_url = f"https://cdn.islamic.network/quran/audio-surah/128/{code}/{n}.mp3"
-        # زرار فتح المصحف - بقى بيبعت صور المصحف مش لينك
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("فتح المصحف 📖", callback_data=f"mushaf:{n}")]])
         await update.message.reply_audio(
             audio=audio_url,
@@ -115,15 +112,17 @@ async def mushaf_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text(f"جاري فتح مصحف سورة {surah_name} 📖 ...")
     try:
         data = requests.get(f"https://api.alquran.cloud/v1/surah/{n}").json()['data']
-        pages = sorted(set(a['page'] for a in data['ayahs']))
-        for page in pages:
-            img_url = f"https://cdn.islamic.network/quran/images/{page}.png"
-            try:
-                await query.message.reply_photo(photo=img_url, caption=f"سورة {surah_name} - صفحة {page}")
-            except:
-                await query.message.reply_text(f"افتح المصحف من هنا: https://quran.com/{n}")
-                break
-    except:
+        ayahs = data['ayahs']
+        # لو السورة طويلة زي البقرة مش هنبعت 286 صورة
+        if len(ayahs) > 20:
+            await query.message.reply_text(f"سورة {surah_name} طويلة، افتح المصحف كامل من هنا 👇\nhttps://quran.com/{n}")
+            ayahs = ayahs[:10]
+        for a in ayahs:
+            ayah_num = a['numberInSurah']
+            # اللينك الصح لصورة الآية بالرسم العثماني المزخرف
+            img_url = f"https://cdn.islamic.network/quran/images/{n}_{ayah_num}.png"
+            await query.message.reply_photo(photo=img_url, caption=f"سورة {surah_name} - آية {ayah_num}")
+    except Exception as e:
         await query.message.reply_text(f"افتح المصحف من هنا: https://quran.com/{n}")
 
 if __name__ == "__main__":
