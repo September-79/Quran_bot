@@ -17,6 +17,11 @@ RECITERS = {
 
 user_reciter = {}
 
+# تحويل الأرقام لأرقام عربية مشرقة ١٢٣
+def to_arabic_num(n):
+    arabic = "٠١٢٣٤٥٦٧٨٩"
+    return "".join(arabic[int(d)] for d in str(n))
+
 def surah_keyboard():
     rows = []
     for i in range(0, len(SURAHS), 4):
@@ -56,9 +61,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "📿 آية اليوم":
         try:
-            r = requests.get("https://api.alquran.cloud/v1/ayah/random").json()
+            r = requests.get("https://api.alquran.cloud/v1/ayah/random/quran-uthmani").json()
             ayah = r['data']
-            await update.message.reply_text(f"{ayah['text']}\n\n— {ayah['surah']['name']} - آية {ayah['numberInSurah']}")
+            await update.message.reply_text(f"{ayah['text']} ﴿{to_arabic_num(ayah['numberInSurah'])}﴾\n\n— سورة {ayah['surah']['name']}")
         except:
             await update.message.reply_text("حاول تاني")
         return
@@ -71,24 +76,41 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if v == code:
                 reciter_name = k
 
-        msg = await update.message.reply_text(f"لقد اخترت سورة {text} من القارئ {reciter_name} برواية حفص عن عاصم - المصحف الموجود , ستتصل لك في لحظات ..")
+        msg = await update.message.reply_text(f"لقد اخترت سورة {text} من القارئ {reciter_name} برواية حفص عن عاصم، جاري التحميل ..")
 
+        # 1 - نص السورة بالشكل الجديد - من غير زر فتح المصحف
         try:
-            data = requests.get(f"https://api.alquran.cloud/v1/surah/{n}").json()['data']
-            full_text = "\n".join([f"{a['text']} ﴿{a['numberInSurah']}﴾" for a in data['ayahs']])
-            for i in range(0, len(full_text), 4000):
-                await update.message.reply_text(f"سورة {text}\n\n{full_text[i:i+4000]}")
-        except:
-            pass
+            # quran-uthmani = الرسم العثماني الصح
+            data = requests.get(f"https://api.alquran.cloud/v1/surah/{n}/quran-uthmani").json()['data']
+            ayahs = data['ayahs']
+            # لو أول آية فيها البسملة ودي مش الفاتحة، بنشيلها لأنها هتتكرر في الهيدر
+            full = ""
+            for a in ayahs:
+                t = a['text']
+                # شيل البسملة من أول آية لو موجودة عشان متتكررش، ماعدا الفاتحة والتوبة
+                if a['numberInSurah'] == 1 and n not in [1, 9]:
+                    t = t.replace("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", "").strip()
+                full += f"{t} ﴿{to_arabic_num(a['numberInSurah'])}﴾ "
 
+            # الشكل النهائي
+            header = f"✦ ━━━━ سورة {text} ━━━━ ✦\n\n"
+            if n != 9:
+                header += "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ\n\n"
+            footer = "\n\n━━━ صدق الله العظيم ━━━"
+            final_text = header + full.strip() + footer
+
+            for i in range(0, len(final_text), 4000):
+                await update.message.reply_text(final_text[i:i+4000])
+        except Exception as e:
+            await update.message.reply_text("حصلت مشكلة في تحميل النص، حاول تاني")
+
+        # 2 - صوت السورة كامل - من غير أي زرار
         audio_url = f"https://cdn.islamic.network/quran/audio-surah/128/{code}/{n}.mp3"
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("فتح المصحف 📖", callback_data=f"mushaf:{n}")]])
         await update.message.reply_audio(
             audio=audio_url,
             title=text,
             performer=reciter_name,
-            caption=f"🎧 سورة {text} - {reciter_name}",
-            reply_markup=keyboard
+            caption=f"🎧 سورة {text} - {reciter_name}"
         )
         await msg.delete()
         return
@@ -104,32 +126,10 @@ async def reciter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"تم اختيار القارئ: {name} ✅\nالآن اختر السورة:")
     await query.message.reply_text("اختر السورة 👇", reply_markup=surah_keyboard())
 
-async def mushaf_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    n = int(query.data.split(":")[1])
-    surah_name = SURAHS[n-1]
-    await query.message.reply_text(f"جاري فتح مصحف سورة {surah_name} 📖 ...")
-    try:
-        data = requests.get(f"https://api.alquran.cloud/v1/surah/{n}").json()['data']
-        ayahs = data['ayahs']
-        # لو السورة طويلة زي البقرة مش هنبعت 286 صورة
-        if len(ayahs) > 20:
-            await query.message.reply_text(f"سورة {surah_name} طويلة، افتح المصحف كامل من هنا 👇\nhttps://quran.com/{n}")
-            ayahs = ayahs[:10]
-        for a in ayahs:
-            ayah_num = a['numberInSurah']
-            # اللينك الصح لصورة الآية بالرسم العثماني المزخرف
-            img_url = f"https://cdn.islamic.network/quran/images/{n}_{ayah_num}.png"
-            await query.message.reply_photo(photo=img_url, caption=f"سورة {surah_name} - آية {ayah_num}")
-    except Exception as e:
-        await query.message.reply_text(f"افتح المصحف من هنا: https://quran.com/{n}")
-
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(reciter_callback, pattern="^reciter:"))
-    app.add_handler(CallbackQueryHandler(mushaf_callback, pattern="^mushaf:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     print("Bot is running...")
     app.run_polling()
