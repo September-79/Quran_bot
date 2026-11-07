@@ -53,11 +53,10 @@ RECITERS = {
     "محمود خليل الحصري": "ar.husary",
     "سعد الغامدي": "ar.aymanswoaid",
     "محمد المنشاوي": "ar.minshawi",
-    "محمد رفعت": "rifaat",
+    "محمد رفعت": "ar.muhammadrafat",
 }
 
 # السور المتوفرة بصوت الشيخ محمد رفعت فقط - زي بوت IslamicQuranBot
-# باقي السور مش مسجلة ليه أصلا لأنه ملوش مصحف كامل
 RIFAAT_SURAHS = [
     "الفاتحة","البقرة","يونس","هود","يوسف","الإسراء","الكهف","مريم","طه",
     "الفتح","القمر","الرحمن","الواقعة","الحاقة","الجن","المزمل","القيامة",
@@ -72,20 +71,61 @@ RIFAAT_SURAHS = [
 user_reciter = {}
 user_city = {}
 
+# ================= الشيخ محمد رفعت - من mp3quran API =================
+_rifaat_cache = {}
+_rifaat_server = None
+_rifaat_available = None
+
+def load_rifaat_from_api():
+    """بيسأل mp3quran API على السيرفر الصح لمحمد رفعت - زي IslamicQuranBot"""
+    global _rifaat_server, _rifaat_available
+    if _rifaat_server is not None:
+        return _rifaat_server, _rifaat_available
+    try:
+        r = requests.get("https://www.mp3quran.net/api/v3/reciters?language=ar", timeout=15).json()
+        reciters = r.get("reciters", [])
+        for rec in reciters:
+            name = rec.get("name", "")
+            if "رفعت" in name or "Rifaat" in name or "Rifat" in name or "Refaat" in name:
+                for moshaf in rec.get("moshaf", []):
+                    server = moshaf.get("server", "")
+                    surah_list = moshaf.get("surah_list", "")
+                    available = set()
+                    for x in surah_list.split(","):
+                        x = x.strip()
+                        if x.isdigit():
+                            available.add(int(x))
+                    if server and available:
+                        _rifaat_server = server
+                        _rifaat_available = available
+                        print(f"Rifaat loaded: {name} - server={server} - count={len(available)}")
+                        return server, available
+        print("Rifaat not found in mp3quran API")
+    except Exception as e:
+        print(f"Rifaat API error: {e}")
+    return None, None
+
+def get_rifaat_audio(surah_num):
+    """بيرجع لينك محمد رفعت من السيرفر الصح اللي رجعه الـ API"""
+    if surah_num in _rifaat_cache:
+        return _rifaat_cache[surah_num]
+    server, available = load_rifaat_from_api()
+    if server and surah_num in available:
+        url = f"{server}{surah_num:03d}.mp3"
+        _rifaat_cache[surah_num] = url
+        print(f"Rifaat URL for surah {surah_num}: {url}")
+        return url
+    print(f"Rifaat surah {surah_num} not available - server={server}")
+    return None
+
 def get_audio_url(code, surah_num):
     """بيرجع لينك الصوت حسب القارئ"""
-    if code == "rifaat":
-        # هنجرب كل سيرفرات mp3quran لحد ما واحد يشتغل
-        # لأن ملفات رفعت متوزعة ومش كلها على سيرفر واحد
-        for server in [8, 12, 10, 11, 7, 9, 13, 14]:
-            url = f"https://server{server}.mp3quran.net/rfaat/{surah_num:03d}.mp3"
-            try:
-                r = requests.head(url, timeout=5)
-                if r.status_code == 200:
-                    return url
-            except:
-                continue
-        return f"https://server8.mp3quran.net/rfaat/{surah_num:03d}.mp3"
+    if code == "ar.muhammadrafat":
+        url = get_rifaat_audio(surah_num)
+        if url:
+            return url
+        # لو الـ API فشل، رجع None والـ try/except هيتصرف
+        return None
     return f"https://cdn.islamic.network/quran/audio-surah/128/{code}/{surah_num}.mp3"
 
 def to_arabic_num(n):
@@ -259,9 +299,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in ["🎧 الاستماع للقرآن", "📖 قراءة السورة", "🔍 بحث باسم السورة"]:
         context.user_data['mode'] = 'read'
-        # لو القارئ الحالي رفعت، اظهر السور المتوفرة بس
         code_now = user_reciter.get(user_id, "ar.abdulbasitmurattal")
-        if code_now == "rifaat":
+        if code_now == "ar.muhammadrafat":
             await update.message.reply_text("اختر من السور المتوفرة بصوت الشيخ محمد رفعت 👇", reply_markup=rifaat_keyboard())
         else:
             await update.message.reply_text("اختر السورة 👇", reply_markup=surah_keyboard())
@@ -431,8 +470,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if v == code:
                 reciter_name = k
 
-        # لو رفعت والسورة مش متوفرة ليه، نبهه قبل ما نكمل
-        if code == "rifaat" and text not in RIFAAT_SURAHS:
+        if code == "ar.muhammadrafat" and text not in RIFAAT_SURAHS:
             await update.message.reply_text(
                 f"⚠️ سورة {text} مش متوفرة بصوت الشيخ محمد رفعت\n\n"
                 f"الشيخ رفعت ليه سور معينة بس، زي بوت IslamicQuranBot بالظبط.\n"
@@ -510,31 +548,47 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # ===== إرسال الصوت - مع حماية من الفشل =====
         audio_url = get_audio_url(code, n)
-        try:
-            await update.message.reply_audio(
-                audio=audio_url,
-                title=text,
-                performer=reciter_name,
-                caption=f"🎧 سورة {text} - {reciter_name}"
+        # لو رفعت والـ API ملقاش لينك، ابعت رسالة واضحة من غير ما تحاول لينك غلط
+        if code == "ar.muhammadrafat" and audio_url is None:
+            await update.message.reply_text(
+                f"⚠️ سورة {text} مش متوفرة بصوت الشيخ محمد رفعت في السيرفرات حاليا\n"
+                f"جرب سورة تانية من القايمة، أو اسمعها بصوت عبدالباسط 👇"
             )
-        except Exception as e:
-            print(f"Audio error {reciter_name} surah {n}: {e}")
-            if code == "rifaat":
-                await update.message.reply_text(
-                    f"⚠️ سورة {text} مش متوفرة بصوت الشيخ محمد رفعت في السيرفرات حاليا\n"
-                    f"جرب سورة تانية من القايمة، أو اسمعها بصوت عبدالباسط 👇"
+            try:
+                await update.message.reply_audio(
+                    audio=f"https://cdn.islamic.network/quran/audio-surah/128/ar.abdulbasitmurattal/{n}.mp3",
+                    title=text,
+                    performer="عبدالباسط عبدالصمد",
+                    caption=f"🎧 سورة {text} - عبدالباسط عبدالصمد"
                 )
-                try:
-                    await update.message.reply_audio(
-                        audio=f"https://cdn.islamic.network/quran/audio-surah/128/ar.abdulbasitmurattal/{n}.mp3",
-                        title=text,
-                        performer="عبدالباسط عبدالصمد",
-                        caption=f"🎧 سورة {text} - عبدالباسط عبدالصمد"
+            except:
+                pass
+        else:
+            try:
+                await update.message.reply_audio(
+                    audio=audio_url,
+                    title=text,
+                    performer=reciter_name,
+                    caption=f"🎧 سورة {text} - {reciter_name}"
+                )
+            except Exception as e:
+                print(f"Audio error {reciter_name} surah {n}: {e} - URL was: {audio_url}")
+                if code == "ar.muhammadrafat":
+                    await update.message.reply_text(
+                        f"⚠️ سورة {text} مش متوفرة بصوت الشيخ محمد رفعت في السيرفرات حاليا\n"
+                        f"جرب سورة تانية من القايمة، أو اسمعها بصوت عبدالباسط 👇"
                     )
-                except:
-                    pass
-            else:
-                await update.message.reply_text("⚠️ الصوت مش متوفر دلوقتي، النص اتبعت كامل فوق 👆")
+                    try:
+                        await update.message.reply_audio(
+                            audio=f"https://cdn.islamic.network/quran/audio-surah/128/ar.abdulbasitmurattal/{n}.mp3",
+                            title=text,
+                            performer="عبدالباسط عبدالصمد",
+                            caption=f"🎧 سورة {text} - عبدالباسط عبدالصمد"
+                        )
+                    except:
+                        pass
+                else:
+                    await update.message.reply_text("⚠️ الصوت مش متوفر دلوقتي، النص اتبعت كامل فوق 👆")
         try:
             await msg.delete()
         except:
@@ -550,8 +604,7 @@ async def reciter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_reciter[query.from_user.id] = code
     name = [k for k,v in RECITERS.items() if v==code][0]
     await query.edit_message_text(f"تم اختيار القارئ: {name} ✅\nالآن اختر السورة:")
-    # لو رفعت، اظهر السور المتوفرة بس - زي IslamicQuranBot
-    if code == "rifaat":
+    if code == "ar.muhammadrafat":
         await query.message.reply_text(
             "⚠️ تنبيه: الشيخ محمد رفعت ليه سور معينة بس مسجلة، مش المصحف كله\nاختر من السور المتوفرة 👇",
             reply_markup=rifaat_keyboard()
