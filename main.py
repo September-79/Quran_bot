@@ -74,6 +74,7 @@ def main_keyboard():
         [KeyboardButton("🎧 الاستماع للقرآن"), KeyboardButton("📖 قراءة السورة")],
         [KeyboardButton("🎙️ تغيير القارئ"), KeyboardButton("📿 آية اليوم")],
         [KeyboardButton("📖 تفسير السورة"), KeyboardButton("🔍 بحث باسم السورة")],
+        [KeyboardButton("🔍 البحث بآية")],
         [KeyboardButton("🌅 أذكار الصباح"), KeyboardButton("🌙 أذكار المساء")],
         [KeyboardButton("⏰ تذكير سورة الملك"), KeyboardButton("❌ إلغاء التذكير")],
     ], resize_keyboard=True)
@@ -102,6 +103,32 @@ async def send_mulk_reminder(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await context.bot.send_message(chat_id=chat_id, text="وقت سورة الملك 🤍\nافتحها من هنا: https://quran.com/67")
 
+# ================= البحث بآية - جديد =================
+async def do_search_ayah(keyword, update):
+    if len(keyword) < 2:
+        await update.message.reply_text("❌ اكتب كلمة أطول من حرف، مثال: الصبر - الجنة - الرحمة")
+        return
+    msg = await update.message.reply_text(f"🔍 جاري البحث عن `{keyword}` ...")
+    try:
+        url = f"https://api.alquran.cloud/v1/search/{keyword}/all/quran-uthmani"
+        r = requests.get(url, timeout=15).json()
+        if r["code"] != 200 or r["data"]["count"] == 0:
+            await msg.edit_text(f"❌ ملقتش أي آية فيها كلمة `{keyword}`\nجرب كلمة تانية")
+            return
+        count = r["data"]["count"]
+        matches = r["data"]["matches"][:5]
+        text = f"🔍 لقيت {count} آية فيها `{keyword}`\n\n"
+        for i, m in enumerate(matches, 1):
+            ayah_text = m["text"]
+            surah_name = m["surah"]["name"]
+            ayah_num = m["numberInSurah"]
+            text += f"{i}️⃣ {ayah_text} ﴿{to_arabic_num(ayah_num)}﴾\n— سورة {surah_name}\n\n"
+        text += "عشان تكمل البحث ابعت كلمة تانية 👇\nأو دوس 🏠 القائمة الرئيسية"
+        await msg.edit_text(text)
+    except Exception as e:
+        print(f"Search error: {e}")
+        await msg.edit_text("❌ حصل خطأ في البحث، جرب تاني")
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user_id = update.effective_user.id
@@ -115,6 +142,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text in ["🎧 الاستماع للقرآن", "📖 قراءة السورة", "🔍 بحث باسم السورة"]:
         context.user_data['mode'] = 'read'
         await update.message.reply_text("اختر السورة 👇", reply_markup=surah_keyboard())
+        return
+
+    # ===== البحث بآية - جديد =====
+    if text == "🔍 البحث بآية":
+        context.user_data['mode'] = 'search_ayah'
+        await update.message.reply_text(
+            "🔍 البحث بآية\n\n"
+            "ابعت الكلمة اللي عايز تدور عليها 👇\n"
+            "مثال: الصبر - الجنة - الرحمة - الصلاة\n\n"
+            "اكتب الكلمة وابعتها دلوقتي",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🏠 القائمة الرئيسية")]], resize_keyboard=True)
+        )
         return
 
     if text == "📖 تفسير السورة":
@@ -168,6 +207,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"{ayah['text']} ﴿{to_arabic_num(ayah['numberInSurah'])}﴾\n\n— سورة {ayah['surah']['name']}")
         except:
             await update.message.reply_text("حاول تاني")
+        return
+
+    # ===== لو المستخدم في وضع البحث بآية =====
+    if context.user_data.get('mode') == 'search_ayah':
+        await do_search_ayah(text, update)
         return
 
     if text in SURAHS:
