@@ -152,6 +152,7 @@ def main_keyboard():
         [KeyboardButton("📖 تفسير السورة"), KeyboardButton("🔍 بحث باسم السورة")],
         [KeyboardButton("🔍 البحث بآية")],
         [KeyboardButton("🌅 أذكار الصباح"), KeyboardButton("🌙 أذكار المساء")],
+        [KeyboardButton("⏰ تذكير أذكار الصباح"), KeyboardButton("⏰ تذكير أذكار المساء")],
         [KeyboardButton("⏰ تذكير سورة الملك"), KeyboardButton("⏰ تذكير الواقعة")],
         [KeyboardButton("⏰ تذكير الكهف"), KeyboardButton("❌ إلغاء التذكيرات")],
     ], resize_keyboard=True)
@@ -183,8 +184,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📿 آية اليوم\n"
         "آية عشوائية كل مرة تدوس عليها\n\n"
         "🌅 أذكار الصباح | 🌙 أذكار المساء\n"
-        "أذكار كاملة\n\n"
+        "أذكار كاملة + تذكير تلقائي كل يوم\n\n"
         "⏰ تذكيرات تلقائية حسب بلدك\n"
+        "• أذكار الصباح بعد الفجر\n"
+        "• أذكار المساء بعد العصر\n"
         "• سورة الملك بعد العشاء\n"
         "• سورة الواقعة بعد الفجر\n"
         "• سورة الكهف كل جمعة\n\n"
@@ -200,6 +203,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📿 آية اليوم", callback_data="feat:ayah")],
         [InlineKeyboardButton("🌅 أذكار الصباح", callback_data="feat:sabah")],
         [InlineKeyboardButton("🌙 أذكار المساء", callback_data="feat:masa")],
+        [InlineKeyboardButton("⏰ تذكير أذكار الصباح", callback_data="feat:sabah_rem")],
+        [InlineKeyboardButton("⏰ تذكير أذكار المساء", callback_data="feat:masa_rem")],
         [InlineKeyboardButton("🎙️ تغيير القارئ", callback_data="feat:reciter")],
         [InlineKeyboardButton("⏰ تذكير الملك بعد العشاء", callback_data="feat:mulk")],
         [InlineKeyboardButton("⏰ تذكير الواقعة بعد الفجر", callback_data="feat:waqia")],
@@ -212,7 +217,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=kb)
         await update.message.reply_text("أو استخدم القايمة اللي تحت 👇", reply_markup=main_keyboard())
 
-# ================= الراديو - من غير makkahlive =================
+# ================= الراديو =================
 async def send_radio_menu(msg_obj):
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("▶️ افتح الراديو - الموقع الرسمي", url=RADIO_WEB_URL)],
@@ -264,6 +269,10 @@ async def feature_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif feat == "masa":
         for z in AZKAR_MASA:
             await query.message.reply_text(z)
+    elif feat == "sabah_rem":
+        await query.message.reply_text("دوس على زرار ⏰ تذكير أذكار الصباح من القايمة اللي تحت 👇", reply_markup=main_keyboard())
+    elif feat == "masa_rem":
+        await query.message.reply_text("دوس على زرار ⏰ تذكير أذكار المساء من القايمة اللي تحت 👇", reply_markup=main_keyboard())
     elif feat == "reciter":
         kb = [[InlineKeyboardButton(name, callback_data=f"reciter:{code}")] for name, code in RECITERS.items()]
         await query.message.reply_text("اختر القارئ:", reply_markup=InlineKeyboardMarkup(kb))
@@ -305,6 +314,21 @@ async def send_kahf_reminder(context: ContextTypes.DEFAULT_TYPE):
         "🕌 جمعة مباركة 🤍\n\nمن قرأ سورة الكهف يوم الجمعة أضاء له من النور ما بين الجمعتين\nيلا نقرأها سوا:",
         "🎧 سورة الكهف - تذكير الجمعة")
 
+# ================= تذكير أذكار الصباح والمساء =================
+async def send_sabah_reminder(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.job.chat_id
+    await context.bot.send_message(chat_id=chat_id, text="🌅 وقت أذكار الصباح 🤍\n\nأصبحنا وأصبح الملك لله، يلا نبدأ يومنا بذكر الله:")
+    for z in AZKAR_SABAH:
+        await context.bot.send_message(chat_id=chat_id, text=z)
+    await context.bot.send_message(chat_id=chat_id, text="━━━ تقبل الله منا ومنكم صباحكم ذكر 🤍 ━━━", reply_markup=main_keyboard())
+
+async def send_masa_reminder(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.job.chat_id
+    await context.bot.send_message(chat_id=chat_id, text="🌙 وقت أذكار المساء 🤍\n\nأمسينا وأمسى الملك لله، يلا نختم يومنا بذكر الله:")
+    for z in AZKAR_MASA:
+        await context.bot.send_message(chat_id=chat_id, text=z)
+    await context.bot.send_message(chat_id=chat_id, text="━━━ تقبل الله منا ومنكم مساءكم ذكر 🤍 ━━━", reply_markup=main_keyboard())
+
 def get_prayer_times(city):
     try:
         url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country=Egypt&method=5"
@@ -320,18 +344,23 @@ def get_prayer_times(city):
                 h -= 24
             return h, m
         fajr = add_minutes(timings['Fajr'], 15)
+        asr = add_minutes(timings['Asr'], 15)
         isha = add_minutes(timings['Isha'], 15)
-        return fajr, isha
+        return fajr, asr, isha
     except Exception as e:
         print(f"Prayer error: {e}")
-        return (5, 30), (20, 30)
+        return (5, 30), (15, 30), (20, 30)
 
 def get_fajr_time(city):
-    fajr, _ = get_prayer_times(city)
+    fajr, _, _ = get_prayer_times(city)
     return fajr
 
+def get_asr_time(city):
+    _, asr, _ = get_prayer_times(city)
+    return asr
+
 def get_isha_time(city):
-    _, isha = get_prayer_times(city)
+    _, _, isha = get_prayer_times(city)
     return isha
 
 async def schedule_waqia_after_fajr(context, chat_id, user_id, city):
@@ -348,6 +377,22 @@ async def schedule_mulk_after_isha(context, chat_id, user_id, city):
         j.schedule_removal()
     hour, minute = get_isha_time(city)
     context.job_queue.run_daily(send_mulk_reminder, time=datetime.time(hour=hour, minute=minute), chat_id=chat_id, name=f"mulk_{chat_id}")
+    return hour, minute
+
+async def schedule_sabah_after_fajr(context, chat_id, user_id, city):
+    import datetime
+    for j in context.job_queue.get_jobs_by_name(f"sabah_{chat_id}"):
+        j.schedule_removal()
+    hour, minute = get_fajr_time(city)
+    context.job_queue.run_daily(send_sabah_reminder, time=datetime.time(hour=hour, minute=minute), chat_id=chat_id, name=f"sabah_{chat_id}")
+    return hour, minute
+
+async def schedule_masa_after_asr(context, chat_id, user_id, city):
+    import datetime
+    for j in context.job_queue.get_jobs_by_name(f"masa_{chat_id}"):
+        j.schedule_removal()
+    hour, minute = get_asr_time(city)
+    context.job_queue.run_daily(send_masa_reminder, time=datetime.time(hour=hour, minute=minute), chat_id=chat_id, name=f"masa_{chat_id}")
     return hour, minute
 
 async def ensure_daily_update_job(context, chat_id):
@@ -370,6 +415,16 @@ async def update_prayer_jobs(context: ContextTypes.DEFAULT_TYPE):
             j.schedule_removal()
         h, m = get_isha_time(city)
         context.job_queue.run_daily(send_mulk_reminder, time=datetime.time(hour=h, minute=m), chat_id=chat_id, name=f"mulk_{chat_id}")
+    if context.job_queue.get_jobs_by_name(f"sabah_{chat_id}"):
+        for j in context.job_queue.get_jobs_by_name(f"sabah_{chat_id}"):
+            j.schedule_removal()
+        h, m = get_fajr_time(city)
+        context.job_queue.run_daily(send_sabah_reminder, time=datetime.time(hour=h, minute=m), chat_id=chat_id, name=f"sabah_{chat_id}")
+    if context.job_queue.get_jobs_by_name(f"masa_{chat_id}"):
+        for j in context.job_queue.get_jobs_by_name(f"masa_{chat_id}"):
+            j.schedule_removal()
+        h, m = get_asr_time(city)
+        context.job_queue.run_daily(send_masa_reminder, time=datetime.time(hour=h, minute=m), chat_id=chat_id, name=f"masa_{chat_id}")
 
 async def do_search_ayah(keyword, update):
     if len(keyword) < 2:
@@ -451,6 +506,54 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(z)
         return
 
+    # ===== تذكير أذكار الصباح =====
+    if text == "⏰ تذكير أذكار الصباح":
+        if user_id in user_city:
+            city = user_city[user_id]
+            hour, minute = await schedule_sabah_after_fajr(context, chat_id, user_id, city)
+            await ensure_daily_update_job(context, chat_id)
+            await update.message.reply_text(
+                f"✅ تم تفعيل تذكير أذكار الصباح!\n\n"
+                f"📍 مدينتك: {city}\n"
+                f"🌅 هيبعتلك بعد الفجر بـ 15 دقيقة (الساعة {hour:02d}:{minute:02d})\n\n"
+                f"كل يوم بعد الفجر هبعتلك أذكار الصباح كاملة 🤍",
+                reply_markup=main_keyboard()
+            )
+        else:
+            context.user_data['mode'] = 'ask_city_sabah'
+            await update.message.reply_text(
+                "⏰ تذكير أذكار الصباح 🤍\n\n"
+                "عشان البوت يبعتلك بعد الفجر بتوقيت بلدك بالظبط، ابعت اسم مدينتك 👇\n\n"
+                "مثال: سوهاج - القاهرة - الرياض - جدة - بغداد - الجزائر\n\n"
+                "اكتب اسم مدينتك وابعتها",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🏠 القائمة الرئيسية")]], resize_keyboard=True)
+            )
+        return
+
+    # ===== تذكير أذكار المساء =====
+    if text == "⏰ تذكير أذكار المساء":
+        if user_id in user_city:
+            city = user_city[user_id]
+            hour, minute = await schedule_masa_after_asr(context, chat_id, user_id, city)
+            await ensure_daily_update_job(context, chat_id)
+            await update.message.reply_text(
+                f"✅ تم تفعيل تذكير أذكار المساء!\n\n"
+                f"📍 مدينتك: {city}\n"
+                f"🌙 هيبعتلك بعد العصر بـ 15 دقيقة (الساعة {hour:02d}:{minute:02d})\n\n"
+                f"كل يوم بعد العصر هبعتلك أذكار المساء كاملة 🤍",
+                reply_markup=main_keyboard()
+            )
+        else:
+            context.user_data['mode'] = 'ask_city_masa'
+            await update.message.reply_text(
+                "⏰ تذكير أذكار المساء 🤍\n\n"
+                "عشان البوت يبعتلك بعد العصر بتوقيت بلدك بالظبط، ابعت اسم مدينتك 👇\n\n"
+                "مثال: سوهاج - القاهرة - الرياض - جدة - بغداد - الجزائر\n\n"
+                "اكتب اسم مدينتك وابعتها",
+                reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🏠 القائمة الرئيسية")]], resize_keyboard=True)
+            )
+        return
+
     if text == "⏰ تذكير سورة الملك":
         if user_id in user_city:
             city = user_city[user_id]
@@ -520,10 +623,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "❌ إلغاء التذكيرات":
         try:
-            for name in [f"mulk_{chat_id}", f"waqia_{chat_id}", f"kahf_{chat_id}", f"prayer_update_{chat_id}"]:
+            for name in [f"mulk_{chat_id}", f"waqia_{chat_id}", f"kahf_{chat_id}", f"sabah_{chat_id}", f"masa_{chat_id}", f"prayer_update_{chat_id}"]:
                 for j in context.job_queue.get_jobs_by_name(name):
                     j.schedule_removal()
-            await update.message.reply_text("تم إلغاء كل التذكيرات ❌\n(الملك - الواقعة - الكهف)")
+            await update.message.reply_text("تم إلغاء كل التذكيرات ❌\n(الملك - الواقعة - الكهف - أذكار الصباح - أذكار المساء)")
         except:
             await update.message.reply_text("مفيش تذكير شغال حاليا")
         return
@@ -535,6 +638,40 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"{ayah['text']} ﴿{to_arabic_num(ayah['numberInSurah'])}﴾\n\n— سورة {ayah['surah']['name']}")
         except:
             await update.message.reply_text("حاول تاني")
+        return
+
+    if context.user_data.get('mode') == 'ask_city_sabah':
+        city = text.strip()
+        user_city[user_id] = city
+        context.user_data['mode'] = None
+        await update.message.reply_text(f"جاري معرفة معاد الفجر في {city} ...")
+        hour, minute = await schedule_sabah_after_fajr(context, chat_id, user_id, city)
+        await ensure_daily_update_job(context, chat_id)
+        await update.message.reply_text(
+            f"✅ تم تفعيل تذكير أذكار الصباح!\n\n"
+            f"📍 مدينتك: {city}\n"
+            f"🌅 هيبعتلك بعد الفجر بـ 15 دقيقة (الساعة {hour:02d}:{minute:02d})\n\n"
+            f"كل يوم بعد الفجر هبعتلك أذكار الصباح كاملة 🤍\n"
+            f"وكل يوم البوت هيحدث المعاد تلقائي",
+            reply_markup=main_keyboard()
+        )
+        return
+
+    if context.user_data.get('mode') == 'ask_city_masa':
+        city = text.strip()
+        user_city[user_id] = city
+        context.user_data['mode'] = None
+        await update.message.reply_text(f"جاري معرفة معاد العصر في {city} ...")
+        hour, minute = await schedule_masa_after_asr(context, chat_id, user_id, city)
+        await ensure_daily_update_job(context, chat_id)
+        await update.message.reply_text(
+            f"✅ تم تفعيل تذكير أذكار المساء!\n\n"
+            f"📍 مدينتك: {city}\n"
+            f"🌙 هيبعتلك بعد العصر بـ 15 دقيقة (الساعة {hour:02d}:{minute:02d})\n\n"
+            f"كل يوم بعد العصر هبعتلك أذكار المساء كاملة 🤍\n"
+            f"وكل يوم البوت هيحدث المعاد تلقائي",
+            reply_markup=main_keyboard()
+        )
         return
 
     if context.user_data.get('mode') == 'ask_city_mulk':
