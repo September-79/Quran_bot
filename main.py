@@ -212,12 +212,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=kb)
         await update.message.reply_text("أو استخدم القايمة اللي تحت 👇", reply_markup=main_keyboard())
 
-# ================= الراديو - من غير زرار جوه تليجرام =================
+# ================= الراديو - من غير makkahlive =================
 async def send_radio_menu(msg_obj):
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("▶️ افتح الراديو - الموقع الرسمي", url=RADIO_WEB_URL)],
-        [InlineKeyboardButton("▶️ اسمع من يوتيوب - بث مباشر", url="https://www.youtube.com/@QuranRadioCairo/live")],
-        [InlineKeyboardButton("▶️ اسمع من makkahlive", url="https://makkahlive.net/egyptian-quran-radio/")],
+        [InlineKeyboardButton("▶️ اسمع من يوتيوب - بث مباشر", url="https://www.youtube.com/results?search_query=%D8%A5%D8%B0%D8%A7%D8%B9%D8%A9+%D8%A7%D9%84%D9%82%D8%B1%D8%A2%D9%86+%D8%A7%D9%84%D9%83%D8%B1%D9%8A%D9%85+%D9%85%D9%86+%D8%A7%D9%84%D9%82%D8%A7%D9%87%D8%B1%D8%A9+%D8%A8%D8%AB+%D9%85%D8%A8%D8%A7%D8%B4%D8%B1")],
+        [InlineKeyboardButton("▶️ اسمع من راديو جاردن - شغال دايما", url="https://radio.garden/listen/quran-radio-cairo/")],
     ])
     await msg_obj.reply_text(
         "📻 إذاعة القرآن الكريم من القاهرة\n"
