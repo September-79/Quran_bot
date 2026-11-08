@@ -1,6 +1,5 @@
 import os
 import requests
-import tempfile
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
@@ -69,7 +68,6 @@ RIFAAT_SURAHS = [
 ]
 
 # ================= راديو القرآن الكريم - القاهرة =================
-RADIO_STREAM = "https://livestreaming5.onlinexat.com:2010/stream"
 RADIO_WEB_URL = "https://misrquran.gov.eg/home"
 
 user_reciter = {}
@@ -195,7 +193,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎧 الاستماع للقرآن", callback_data="feat:listen")],
-        [InlineKeyboardButton("📻 راديو القرآن الكريم - مصر (بث مباشر)", callback_data="feat:radio_menu")],
+        [InlineKeyboardButton("📻 راديو القرآن الكريم - مصر", callback_data="feat:radio_menu")],
         [InlineKeyboardButton("📖 قراءة السورة", callback_data="feat:read")],
         [InlineKeyboardButton("📖 تفسير السورة", callback_data="feat:tafsir")],
         [InlineKeyboardButton("🔍 البحث بآية", callback_data="feat:search")],
@@ -214,76 +212,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=kb)
         await update.message.reply_text("أو استخدم القايمة اللي تحت 👇", reply_markup=main_keyboard())
 
-# ================= الراديو - التصليح الجديد =================
+# ================= الراديو - من غير زرار جوه تليجرام =================
 async def send_radio_menu(msg_obj):
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("▶️ اسمع جوه تليجرام", callback_data="feat:radio")],
-        [InlineKeyboardButton("🌐 افتح الراديو كامل في المتصفح", url=RADIO_WEB_URL)],
+        [InlineKeyboardButton("▶️ افتح الراديو - الموقع الرسمي", url=RADIO_WEB_URL)],
+        [InlineKeyboardButton("▶️ اسمع من يوتيوب - بث مباشر", url="https://www.youtube.com/@QuranRadioCairo/live")],
+        [InlineKeyboardButton("▶️ اسمع من makkahlive", url="https://makkahlive.net/egyptian-quran-radio/")],
     ])
     await msg_obj.reply_text(
         "📻 إذاعة القرآن الكريم من القاهرة\n"
         "━━━━━━━━━━━━━━\n"
         "بث مباشر 24 ساعة\n"
         "عبدالباسط - الحُصري - المنشاوي - مصطفى إسماعيل - محمد رفعت\n\n"
-        "دوس (اسمع جوه تليجرام) هيجيلك مقطع 2 دقيقة من البث الحي 👇",
+        "دوس على أي زرار، هيفتح الراديو في المتصفح\n"
+        "وهيفضل شغال في الخلفية وانت بتستخدم موبايلك عادي 👇",
         reply_markup=kb
     )
-
-async def send_radio(update_obj, is_callback=False):
-    """بيبعت مقطع 2 دقيقة من الراديو - بيشتغل جوه تليجرام"""
-    if is_callback:
-        msg_obj = update_obj.callback_query.message
-        await update_obj.callback_query.answer()
-    else:
-        msg_obj = update_obj.message
-
-    status = await msg_obj.reply_text("📻 جاري تشغيل إذاعة القرآن الكريم من القاهرة ...\nبحمل مقطع صغير عشان يشتغل جوه تليجرام")
-
-    try:
-        # هنحمل أول 2 دقيقة بس (حوالي 2 ميجا) مش البث كله
-        r = requests.get(RADIO_STREAM, stream=True, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        size = 0
-        max_size = 2 * 1024 * 1024  # 2 ميجا = حوالي 2 دقيقة
-        for chunk in r.iter_content(chunk_size=8192):
-            if chunk:
-                tmp.write(chunk)
-                size += len(chunk)
-                if size >= max_size:
-                    break
-        tmp.close()
-
-        await status.delete()
-
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("▶️ اسمع مقطع تاني (2 دقيقة)", callback_data="feat:radio")],
-            [InlineKeyboardButton("🌐 افتح الراديو كامل في المتصفح", url=RADIO_WEB_URL)],
-        ])
-
-        await msg_obj.reply_voice(
-            voice=open(tmp.name, 'rb'),
-            caption="📻 إذاعة القرآن الكريم من القاهرة - بث مباشر\n\nده مقطع 2 دقيقة من البث الحي\nخلص؟ دوس على زرار (اسمع مقطع تاني) وهيجيبلك اللي بعده 👇",
-            reply_markup=kb
-        )
-        try:
-            os.remove(tmp.name)
-        except:
-            pass
-
-    except Exception as e:
-        print(f"Radio inside error: {e}")
-        try:
-            await status.delete()
-        except:
-            pass
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("▶️ اسمع من يوتيوب - بث مباشر", url="https://www.youtube.com/@QuranRadioCairo/live")],
-            [InlineKeyboardButton("▶️ اسمع من الموقع الرسمي", url=RADIO_WEB_URL)],
-        ])
-        await msg_obj.reply_text(
-            "⚠️ الراديو مشغول دلوقتي، جرب تاني بعد دقيقة\nأو اسمعه من هنا 👇",
-            reply_markup=kb
-        )
 
 async def feature_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -293,9 +237,6 @@ async def feature_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if feat == "radio_menu":
         await send_radio_menu(query.message)
-        return
-    if feat == "radio":
-        await send_radio(update, is_callback=True)
         return
     elif feat == "listen" or feat == "read":
         context.user_data['mode'] = 'read'
