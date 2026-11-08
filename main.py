@@ -67,6 +67,17 @@ RIFAAT_SURAHS = [
     "الشرح","التين","القدر","الزلزلة","العصر"
 ]
 
+# ================= روابط راديو القرآن الكريم - القاهرة =================
+# حاطين كذا لينك عشان لو واحد وقف التاني يشتغل
+RADIO_URLS = [
+    "https://livestreaming5.onlinexat.com:2010/stream",
+    "https://n02.radiojar.com/8s5u5tpdtwzuv?rj-ttl=5&rj-tok=AAABkS4bP7kAwk-4iP2Z5n8VhQ",
+    "https://stream.radiojar.com/8s5u5tpdtwzuv",
+    "https://23683.live.streamtheworld.com/QURAN_RADIO_SC",
+    "https://20873.live.streamtheworld.com/QURAN_RADIO_SC",
+]
+RADIO_WEB_URL = "https://makkahlive.net/egyptian-quran-radio/"
+
 user_reciter = {}
 user_city = {}
 
@@ -145,6 +156,7 @@ def main_keyboard():
     return ReplyKeyboardMarkup([
         [KeyboardButton("🎧 الاستماع للقرآن"), KeyboardButton("📖 قراءة السورة")],
         [KeyboardButton("🎙️ تغيير القارئ"), KeyboardButton("📿 آية اليوم")],
+        [KeyboardButton("📻 راديو القرآن الكريم - مصر")],
         [KeyboardButton("📖 تفسير السورة"), KeyboardButton("🔍 بحث باسم السورة")],
         [KeyboardButton("🔍 البحث بآية")],
         [KeyboardButton("🌅 أذكار الصباح"), KeyboardButton("🌙 أذكار المساء")],
@@ -152,7 +164,7 @@ def main_keyboard():
         [KeyboardButton("⏰ تذكير الكهف"), KeyboardButton("❌ إلغاء التذكيرات")],
     ], resize_keyboard=True)
 
-# ================= START - عرض المميزات =================
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "أهلاً بيك في بوت القرآن الكريم 🤍\n"
@@ -167,6 +179,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• سعد الغامدي\n"
         "• المنشاوي\n"
         "• محمد رفعت\n\n"
+        "📻 راديو القرآن الكريم - مصر\n"
+        "بث مباشر 24 ساعة من القاهرة\n"
+        "عبدالباسط والحُصري والمنشاوي ومصطفى إسماعيل\n\n"
         "📖 قراءة السورة\n"
         "نص السورة كامل + معلوماتها + فضلها + سبب نزولها\n\n"
         "📖 تفسير السورة\n"
@@ -186,6 +201,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎧 الاستماع للقرآن", callback_data="feat:listen")],
+        [InlineKeyboardButton("📻 راديو القرآن الكريم - مصر (بث مباشر)", callback_data="feat:radio")],
         [InlineKeyboardButton("📖 قراءة السورة", callback_data="feat:read")],
         [InlineKeyboardButton("📖 تفسير السورة", callback_data="feat:tafsir")],
         [InlineKeyboardButton("🔍 البحث بآية", callback_data="feat:search")],
@@ -204,13 +220,58 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=kb)
         await update.message.reply_text("أو استخدم القايمة اللي تحت 👇", reply_markup=main_keyboard())
 
+# ================= الراديو =================
+async def send_radio(update_obj, is_callback=False):
+    """بيبعت الراديو - بيجرب كل اللينكات لحد ما واحد يشتغل"""
+    if is_callback:
+        msg_obj = update_obj.callback_query.message
+        await update_obj.callback_query.answer()
+    else:
+        msg_obj = update_obj.message
+
+    await msg_obj.reply_text("📻 جاري تشغيل إذاعة القرآن الكريم من القاهرة ...")
+
+    # جرب كل لينك
+    for url in RADIO_URLS:
+        try:
+            await msg_obj.reply_audio(
+                audio=url,
+                title="إذاعة القرآن الكريم - القاهرة",
+                performer="بث مباشر 24 ساعة",
+                caption="📻 إذاعة القرآن الكريم من القاهرة - بث مباشر\n\nعبدالباسط - الحُصري - المنشاوي - مصطفى إسماعيل - محمد رفعت\n\nلو الصوت وقف، دوس على زرار المتصفح تحت 👇"
+            )
+            print(f"Radio working: {url}")
+            # زرار المتصفح كبديل
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("▶️ افتح الراديو في المتصفح (لو وقف)", url=RADIO_WEB_URL)],
+            ])
+            await msg_obj.reply_text("لو الصوت وقف، اسمعه من هنا 👇", reply_markup=kb)
+            return
+        except Exception as e:
+            print(f"Radio failed {url}: {e}")
+            continue
+
+    # لو كل اللينكات فشلت، ابعت لينك المتصفح
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("▶️ افتح الراديو في المتصفح - شغال 24 ساعة", url=RADIO_WEB_URL)]
+    ])
+    await msg_obj.reply_text(
+        "⚠️ البث جوه تليجرام وقف مؤقتا\n"
+        "دوس هنا واسمعه من المتصفح، شغال 24 ساعة 👇\n\n"
+        "📻 إذاعة القرآن الكريم من القاهرة",
+        reply_markup=kb
+    )
+
 async def feature_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     feat = query.data.split(":")[1]
     user_id = query.from_user.id
 
-    if feat == "listen" or feat == "read":
+    if feat == "radio":
+        await send_radio(update, is_callback=True)
+        return
+    elif feat == "listen" or feat == "read":
         context.user_data['mode'] = 'read'
         code_now = user_reciter.get(user_id, "ar.abdulbasitmurattal")
         if code_now == "ar.muhammadrafat":
@@ -376,6 +437,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🏠 القائمة الرئيسية":
         context.user_data['mode'] = None
         await update.message.reply_text("القائمة الرئيسية:", reply_markup=main_keyboard())
+        return
+
+    # ===== الراديو =====
+    if text == "📻 راديو القرآن الكريم - مصر":
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("▶️ اسمع جوه تليجرام", callback_data="feat:radio")],
+            [InlineKeyboardButton("🌐 افتح الراديو في المتصفح (أضمن)", url=RADIO_WEB_URL)],
+        ])
+        await update.message.reply_text(
+            "📻 إذاعة القرآن الكريم من القاهرة\n"
+            "━━━━━━━━━━━━━━\n"
+            "بث مباشر 24 ساعة\n"
+            "عبدالباسط - الحُصري - المنشاوي - مصطفى إسماعيل - محمد رفعت\n\n"
+            "دوس على اللي يناسبك 👇",
+            reply_markup=kb
+        )
         return
 
     if text in ["🎧 الاستماع للقرآن", "📖 قراءة السورة", "🔍 بحث باسم السورة"]:
