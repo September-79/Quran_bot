@@ -47,7 +47,7 @@ AZKAR_MASA = [
     "8- اللهم إني أسألك العفو والعافية في الدنيا والآخرة (مرة واحدة)",
 ]
 
-# ============ المشايخ + أنواع التلاوة - جديد ============
+# ============ المشايخ + أنواع التلاوة ============
 SHEIKHS = {
     "عبدالباسط عبدالصمد": {
         "مرتل": "ar.abdulbasitmurattal",
@@ -73,20 +73,35 @@ SHEIKHS = {
     },
 }
 
-# عشان الكود القديم يفضل شغال
 RECITERS = {}
 for _sheikh, _styles in SHEIKHS.items():
     for _style, _code in _styles.items():
         RECITERS[f"{_sheikh} - {_style}"] = _code
 
-# سيرفرات المجود من mp3quran
+# ===== فيكس Button_data_invalid: أكواد قصيرة عشان callback_data ميعديش 64 بايت =====
+SHEIKH_IDS = {
+    "s0": "عبدالباسط عبدالصمد",
+    "s1": "مشاري راشد العفاسي",
+    "s2": "محمود خليل الحصري",
+    "s3": "سعد الغامدي",
+    "s4": "محمد المنشاوي",
+    "s5": "محمد رفعت",
+}
+SHEIKH_IDS_REV = {v: k for k, v in SHEIKH_IDS.items()}
+
+STYLE_IDS = {
+    "مرتل": "m",
+    "مجود": "j",
+    "تلاوات نادرة": "r",
+}
+STYLE_IDS_REV = {v: k for k, v in STYLE_IDS.items()}
+
 MUJAWWAD_SERVERS = {
     "abdulbasit_mujawwad": "https://server7.mp3quran.net/basit/Almusshaf-Al-Mojawwad/",
     "husary_mujawwad": "https://server13.mp3quran.net/husr/Almusshaf-Al-Mojawwad/",
     "minshawi_mujawwad": "https://server10.mp3quran.net/minsh/Almusshaf-Al-Mojawwad/",
 }
 
-# تلاوات نادرة - عبدالباسط
 RARE_TILAWAT = {
     "💎 مريم - تلاوة نادرة 1968": "https://server7.mp3quran.net/basit/Almusshaf-Al-Mojawwad/019.mp3",
     "💎 يوسف - تلاوة نادرة": "https://server7.mp3quran.net/basit/Almusshaf-Al-Mojawwad/012.mp3",
@@ -110,13 +125,14 @@ def get_mujawwad_url(code, surah_num):
 
 def sheikhs_keyboard():
     kb = []
-    for sheikh in SHEIKHS.keys():
-        kb.append([InlineKeyboardButton(f"🎙️ {sheikh}", callback_data=f"sheikh:{sheikh}")])
+    for sid, sheikh in SHEIKH_IDS.items():
+        kb.append([InlineKeyboardButton(f"🎙️ {sheikh}", callback_data=f"sh:{sid}")])
     return InlineKeyboardMarkup(kb)
 
 def styles_keyboard(sheikh):
     styles = SHEIKHS.get(sheikh, {})
     kb = []
+    sid = SHEIKH_IDS_REV.get(sheikh, "s0")
     for style in styles.keys():
         if style == "مرتل":
             emoji = "🎧"
@@ -124,7 +140,8 @@ def styles_keyboard(sheikh):
             emoji = "✨"
         else:
             emoji = "💎"
-        kb.append([InlineKeyboardButton(f"{emoji} {style}", callback_data=f"style:{sheikh}:{style}")])
+        style_id = STYLE_IDS.get(style, "m")
+        kb.append([InlineKeyboardButton(f"{emoji} {style}", callback_data=f"st:{sid}:{style_id}")])
     kb.append([InlineKeyboardButton("⬅️ رجوع للمشايخ", callback_data="back_sheikhs")])
     return InlineKeyboardMarkup(kb)
 
@@ -153,7 +170,6 @@ user_reciter = {}
 user_city = {}
 user_coords = {}
 
-# ================= الشيخ محمد رفعت =================
 _rifaat_cache = {}
 _rifaat_server = None
 _rifaat_available = None
@@ -346,7 +362,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📻 راديو القرآن الكريم - مصر\n"
         "بث مباشر 24 ساعة من القاهرة\n\n"
         "📖 قراءة السورة + تفسير + بحث بآية\n\n"
-        "📅 التقويم والمواقيت 🆕\n"
+        "📅 التقويم والمواقيت\n"
         "ميلادي + هجري + مواقيت الصلاة حسب مكانك\n\n"
         "🌅 أذكار الصباح | 🌙 أذكار المساء\n"
         "⏰ تذكيرات: أذكار الصباح - أذكار المساء - الملك - الواقعة - الكهف\n\n"
@@ -384,14 +400,7 @@ async def send_radio_menu(msg_obj):
         [InlineKeyboardButton("▶️ اسمع من يوتيوب - بث مباشر", url="https://www.youtube.com/results?search_query=%D8%A5%D8%B0%D8%A7%D8%B9%D8%A9+%D8%A7%D9%84%D9%82%D8%B1%D8%A2%D9%86+%D8%A7%D9%84%D9%83%D8%B1%D9%8A%D9%85+%D9%85%D9%86+%D8%A7%D9%84%D9%82%D8%A7%D9%87%D8%B1%D8%A9+%D8%A8%D8%AB+%D9%85%D8%A8%D8%A7%D8%B4%D8%B1")],
         [InlineKeyboardButton("▶️ اسمع من راديو جاردن - شغال دايما", url="https://radio.garden/listen/quran-radio-cairo/")],
     ])
-    await msg_obj.reply_text(
-        "📻 إذاعة القرآن الكريم من القاهرة\n"
-        "━━━━━━━━━━━━━━\n"
-        "بث مباشر 24 ساعة\n"
-        "عبدالباسط - الحُصري - المنشاوي - مصطفى إسماعيل - محمد رفعت\n\n"
-        "دوس على أي زرار، هيفتح الراديو في المتصفح 👇",
-        reply_markup=kb
-    )
+    await msg_obj.reply_text("📻 إذاعة القرآن الكريم من القاهرة\n━━━━━━━━━━━━━━\nبث مباشر 24 ساعة\nعبدالباسط - الحُصري - المنشاوي - مصطفى إسماعيل - محمد رفعت\n\nدوس على أي زرار، هيفتح الراديو في المتصفح 👇", reply_markup=kb)
 
 async def feature_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -474,20 +483,16 @@ async def send_surah_text(context, chat_id, surah_num, surah_name, intro_text, a
 
 async def send_mulk_reminder(context: ContextTypes.DEFAULT_TYPE):
     await send_surah_text(context, context.job.chat_id, 67, "الملك", "⏰ وقتك مع سورة الملك بعد العشاء 🤍\n\nمن قرأها كل ليلة منجية من عذاب القبر:", "🎧 سورة الملك - تذكير بعد العشاء")
-
 async def send_waqia_reminder(context: ContextTypes.DEFAULT_TYPE):
     await send_surah_text(context, context.job.chat_id, 56, "الواقعة", "🕌 وقتك مع سورة الواقعة بعد الفجر 🤍\n\nمن قرأها كل ليلة لم تصبه فاقة أبدا:", "🎧 سورة الواقعة - تذكير بعد الفجر")
-
 async def send_kahf_reminder(context: ContextTypes.DEFAULT_TYPE):
     await send_surah_text(context, context.job.chat_id, 18, "الكهف", "🕌 جمعة مباركة 🤍\n\nمن قرأ سورة الكهف يوم الجمعة أضاء له من النور ما بين الجمعتين:", "🎧 سورة الكهف - تذكير الجمعة")
-
 async def send_sabah_reminder(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     await context.bot.send_message(chat_id=chat_id, text="🌅 وقت أذكار الصباح 🤍\n\nأصبحنا وأصبح الملك لله:")
     for z in AZKAR_SABAH:
         await context.bot.send_message(chat_id=chat_id, text=z)
     await context.bot.send_message(chat_id=chat_id, text="━━━ تقبل الله منا ومنكم صباحكم ذكر 🤍 ━━━", reply_markup=main_keyboard())
-
 async def send_masa_reminder(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     await context.bot.send_message(chat_id=chat_id, text="🌙 وقت أذكار المساء 🤍\n\nأمسينا وأمسى الملك لله:")
@@ -513,7 +518,6 @@ def get_prayer_times(city):
     except Exception as e:
         print(f"Prayer error: {e}")
         return (5, 30), (15, 30), (20, 30)
-
 def get_fajr_time(city):
     fajr, _, _ = get_prayer_times(city)
     return fajr
@@ -531,7 +535,6 @@ async def schedule_waqia_after_fajr(context, chat_id, user_id, city):
     hour, minute = get_fajr_time(city)
     context.job_queue.run_daily(send_waqia_reminder, time=datetime.time(hour=hour, minute=minute), chat_id=chat_id, name=f"waqia_{chat_id}")
     return hour, minute
-
 async def schedule_mulk_after_isha(context, chat_id, user_id, city):
     import datetime
     for j in context.job_queue.get_jobs_by_name(f"mulk_{chat_id}"):
@@ -539,7 +542,6 @@ async def schedule_mulk_after_isha(context, chat_id, user_id, city):
     hour, minute = get_isha_time(city)
     context.job_queue.run_daily(send_mulk_reminder, time=datetime.time(hour=hour, minute=minute), chat_id=chat_id, name=f"mulk_{chat_id}")
     return hour, minute
-
 async def schedule_sabah_after_fajr(context, chat_id, user_id, city):
     import datetime
     for j in context.job_queue.get_jobs_by_name(f"sabah_{chat_id}"):
@@ -547,7 +549,6 @@ async def schedule_sabah_after_fajr(context, chat_id, user_id, city):
     hour, minute = get_fajr_time(city)
     context.job_queue.run_daily(send_sabah_reminder, time=datetime.time(hour=hour, minute=minute), chat_id=chat_id, name=f"sabah_{chat_id}")
     return hour, minute
-
 async def schedule_masa_after_asr(context, chat_id, user_id, city):
     import datetime
     for j in context.job_queue.get_jobs_by_name(f"masa_{chat_id}"):
@@ -555,13 +556,11 @@ async def schedule_masa_after_asr(context, chat_id, user_id, city):
     hour, minute = get_asr_time(city)
     context.job_queue.run_daily(send_masa_reminder, time=datetime.time(hour=hour, minute=minute), chat_id=chat_id, name=f"masa_{chat_id}")
     return hour, minute
-
 async def ensure_daily_update_job(context, chat_id):
     import datetime
     exists = context.job_queue.get_jobs_by_name(f"prayer_update_{chat_id}")
     if not exists:
         context.job_queue.run_daily(update_prayer_jobs, time=datetime.time(hour=0, minute=5), chat_id=chat_id, name=f"prayer_update_{chat_id}")
-
 async def update_prayer_jobs(context: ContextTypes.DEFAULT_TYPE):
     import datetime
     chat_id = context.job.chat_id
@@ -662,7 +661,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_radio_menu(update.message)
         return
 
-    # ===== عبدالباسط مجود - زرار مباشر =====
     if text == "✨ عبدالباسط - مجود":
         user_reciter[user_id] = "abdulbasit_mujawwad"
         context.user_data['mode'] = 'read'
@@ -849,7 +847,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         n = SURAHS.index(text) + 1
         mode = context.user_data.get('mode', 'read')
         code = user_reciter.get(user_id, "ar.abdulbasitmurattal")
-        # اسم القارئ والنوع للعرض
         reciter_name = "عبدالباسط عبدالصمد"
         style_name = ""
         for _s, _styles in SHEIKHS.items():
@@ -957,7 +954,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("اكتب اسم سورة صحيح أو اختر من القائمة 👇", reply_markup=surah_keyboard())
 
-# ================= اختيار القارئ - خطوتين: شيخ -> نوع =================
+# ================= اختيار القارئ - خطوتين: شيخ -> نوع - بالفيكس =================
 async def reciter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -967,13 +964,26 @@ async def reciter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🎙️ اختر الشيخ:", reply_markup=sheikhs_keyboard())
         return
 
-    if data.startswith("sheikh:"):
-        sheikh = data.split(":", 1)[1]
+    if data.startswith("sh:"):
+        sid = data.split(":", 1)[1]
+        sheikh = SHEIKH_IDS.get(sid)
+        if not sheikh:
+            await query.edit_message_text("❌ حصل خطأ، جرب تاني")
+            return
         await query.edit_message_text(f"🎙️ الشيخ: {sheikh}\n\nاختر نوع التلاوة 👇", reply_markup=styles_keyboard(sheikh))
         return
 
-    if data.startswith("style:"):
-        _, sheikh, style = data.split(":", 2)
+    if data.startswith("st:"):
+        try:
+            _, sid, style_id = data.split(":", 2)
+        except:
+            await query.edit_message_text("❌ حصل خطأ، جرب تاني")
+            return
+        sheikh = SHEIKH_IDS.get(sid)
+        style = STYLE_IDS_REV.get(style_id)
+        if not sheikh or not style:
+            await query.edit_message_text("❌ حصل خطأ، جرب تاني")
+            return
         code = SHEIKHS[sheikh][style]
         user_reciter[query.from_user.id] = code
         await query.edit_message_text(f"✅ تم اختيار:\n🎙️ الشيخ: {sheikh}\n🎧 النوع: {style}\n\nالآن اختر السورة 👇")
@@ -998,7 +1008,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("today", today_cmd))
     app.add_handler(CommandHandler("prayer", prayer_cmd))
     app.add_handler(CommandHandler("setcity", setcity_cmd))
-    app.add_handler(CallbackQueryHandler(reciter_callback, pattern="^(sheikh:|style:|back_sheikhs|reciter:)"))
+    app.add_handler(CallbackQueryHandler(reciter_callback, pattern="^(sh:|st:|back_sheikhs|reciter:)"))
     app.add_handler(CallbackQueryHandler(feature_callback, pattern="^feat:"))
     app.add_handler(MessageHandler(filters.LOCATION, location_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
