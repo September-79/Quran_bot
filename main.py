@@ -72,6 +72,8 @@ RADIO_WEB_URL = "https://misrquran.gov.eg/home"
 
 user_reciter = {}
 user_city = {}
+# جديد: حفظ إحداثيات GPS لكل مستخدم عشان المواقيت الدقيقة
+user_coords = {}
 
 # ================= الشيخ محمد رفعت - من mp3quran API =================
 _rifaat_cache = {}
@@ -152,10 +154,117 @@ def main_keyboard():
         [KeyboardButton("📖 تفسير السورة"), KeyboardButton("🔍 بحث باسم السورة")],
         [KeyboardButton("🔍 البحث بآية")],
         [KeyboardButton("🌅 أذكار الصباح"), KeyboardButton("🌙 أذكار المساء")],
+        [KeyboardButton("📅 التقويم والمواقيت"), KeyboardButton("🕌 مواقيت الصلاة")],
+        [KeyboardButton("📍 ابعت موقعك للمواقيت"), KeyboardButton("🏙️ تغيير مدينتي")],
         [KeyboardButton("⏰ تذكير أذكار الصباح"), KeyboardButton("⏰ تذكير أذكار المساء")],
         [KeyboardButton("⏰ تذكير سورة الملك"), KeyboardButton("⏰ تذكير الواقعة")],
         [KeyboardButton("⏰ تذكير الكهف"), KeyboardButton("❌ إلغاء التذكيرات")],
     ], resize_keyboard=True)
+
+# ================= ============ التقويم الميلادي + الهجري + مواقيت الصلاة ============ =================
+# Aladhan API - مجاني من غير Key - method=5 = مصر (الهيئة المصرية العامة للمساحة)
+
+def clean_prayer_time(t):
+    return t.split(" ")[0]
+
+def get_calendar_data(user_id):
+    # الأولوية: GPS -> مدينة محفوظة -> سوهاج افتراضي
+    if user_id in user_coords:
+        lat = user_coords[user_id]["lat"]
+        lon = user_coords[user_id]["lon"]
+        url = f"https://api.aladhan.com/v1/timings?latitude={lat}&longitude={lon}&method=5"
+        city_label = "موقعك 📍"
+    elif user_id in user_city:
+        city = user_city[user_id]
+        url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country=Egypt&method=5"
+        city_label = city
+    else:
+        url = "https://api.aladhan.com/v1/timingsByCity?city=Sohag&country=Egypt&method=5"
+        city_label = "سوهاج (افتراضي)"
+    r = requests.get(url, timeout=15).json()
+    data = r["data"]
+    return data, city_label
+
+def format_calendar_message(data, city_label):
+    timings = data["timings"]
+    greg = data["date"]["gregorian"]
+    hijri = data["date"]["hijri"]
+    # اسم اليوم بالعربي
+    weekday_en = greg["weekday"]["en"]
+    weekday_ar_map = {"Monday":"الاثنين","Tuesday":"الثلاثاء","Wednesday":"الأربعاء","Thursday":"الخميس","Friday":"الجمعة","Saturday":"السبت","Sunday":"الأحد"}
+    weekday_ar = weekday_ar_map.get(weekday_en, weekday_en)
+    # الشهر الميلادي بالعربي
+    month_en = greg["month"]["en"]
+    month_ar_map = {"January":"يناير","February":"فبراير","March":"مارس","April":"أبريل","May":"مايو","June":"يونيو","July":"يوليو","August":"أغسطس","September":"سبتمبر","October":"أكتوبر","November":"نوفمبر","December":"ديسمبر"}
+    month_ar = month_ar_map.get(month_en, month_en)
+
+    return f"""📅 التقويم
+━━━━━━━━━━━━━━
+🗓️ اليوم: {weekday_ar}
+🗓️ ميلادي: {greg['day']} {month_ar} {greg['year']} م
+🌙 هجري: {hijri['day']} {hijri['month']['ar']} {hijri['year']} هـ
+📍 المكان: {city_label}
+
+🕌 مواقيت الصلاة
+━━━━━━━━━━━━━━
+🌅 الفجر: {clean_prayer_time(timings['Fajr'])}
+🌞 الشروق: {clean_prayer_time(timings['Sunrise'])}
+☀️ الظهر: {clean_prayer_time(timings['Dhuhr'])}
+🌤️ العصر: {clean_prayer_time(timings['Asr'])}
+🌇 المغرب: {clean_prayer_time(timings['Maghrib'])}
+🌙 العشاء: {clean_prayer_time(timings['Isha'])}
+🕛 منتصف الليل: {clean_prayer_time(timings['Midnight'])}
+
+💡 لتغيير المكان:
+- ابعت موقعك من زرار 📍
+- أو دوس 🏙️ تغيير مدينتي واكتب اسم مدينتك
+"""
+
+def get_next_prayer_text(data):
+    from datetime import datetime
+    timings = data["timings"]
+    now = datetime.now().strftime("%H:%M")
+    order = [("الفجر","Fajr"),("الشروق","Sunrise"),("الظهر","Dhuhr"),("العصر","Asr"),("المغرب","Maghrib"),("العشاء","Isha")]
+    for name, key in order:
+        t = clean_prayer_time(timings[key])
+        if t > now:
+            # حساب الفرق
+            h1, m1 = map(int, now.split(":"))
+            h2, m2 = map(int, t.split(":"))
+            diff = (h2*60+m2) - (h1*60+m1)
+            hh, mm = divmod(diff, 60)
+            return f"⏰ الصلاة الجاية: {name}\n🕐 الساعة: {t}\n⏳ باقي عليها: {hh} ساعة و {mm} دقيقة"
+    return f"⏰ الصلاة الجاية: الفجر بكرة\n🕐 الساعة: {clean_prayer_time(timings['Fajr'])}"
+
+async def today_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        data, city_label = get_calendar_data(update.effective_user.id)
+        await update.message.reply_text(format_calendar_message(data, city_label), reply_markup=main_keyboard())
+    except Exception as e:
+        await update.message.reply_text(f"❌ حصل خطأ في جلب التقويم: {e}")
+
+async def prayer_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        data, city_label = get_calendar_data(update.effective_user.id)
+        await update.message.reply_text(f"🕌 مواقيت الصلاة - {city_label}\n━━━━━━━━━━━━━━\n\n{get_next_prayer_text(data)}\n\nللمواقيت كاملة دوس 📅 التقويم والمواقيت", reply_markup=main_keyboard())
+    except Exception as e:
+        await update.message.reply_text(f"❌ حصل خطأ: {e}")
+
+async def setcity_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("اكتب كده: /setcity سوهاج\nأو /setcity Cairo")
+        return
+    city = " ".join(context.args)
+    user_city[update.effective_user.id] = city
+    # لو كان مخزن GPS قبل كده نمسحه عشان المدينة الجديدة هي اللي تشتغل
+    if update.effective_user.id in user_coords:
+        del user_coords[update.effective_user.id]
+    await update.message.reply_text(f"✅ تم ضبط المدينة على: {city}\nجرب /today", reply_markup=main_keyboard())
+
+async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loc = update.message.location
+    user_coords[update.effective_user.id] = {"lat": loc.latitude, "lon": loc.longitude}
+    await update.message.reply_text("✅ تم حفظ موقعك!\nدلوقتي المواقيت والتقويم هيبقوا حسب مكانك بالظبط.\n\nجرب دوس 📅 التقويم والمواقيت", reply_markup=main_keyboard())
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -183,6 +292,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "اكتب كلمة زي الصبر - الجنة - الرحمة وهيجيبلك كل الآيات اللي فيها\n\n"
         "📿 آية اليوم\n"
         "آية عشوائية كل مرة تدوس عليها\n\n"
+        "📅 التقويم والمواقيت 🆕\n"
+        "تاريخ النهاردة ميلادي + هجري + مواقيت الصلاة حسب مكانك\n"
+        "ابعت موقعك أو اكتب مدينتك والبوت هيظبطها لوحده\n\n"
         "🌅 أذكار الصباح | 🌙 أذكار المساء\n"
         "أذكار كاملة + تذكير تلقائي كل يوم\n\n"
         "⏰ تذكيرات تلقائية حسب بلدك\n"
@@ -201,6 +313,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📖 تفسير السورة", callback_data="feat:tafsir")],
         [InlineKeyboardButton("🔍 البحث بآية", callback_data="feat:search")],
         [InlineKeyboardButton("📿 آية اليوم", callback_data="feat:ayah")],
+        [InlineKeyboardButton("📅 التقويم والمواقيت 🆕", callback_data="feat:calendar")],
+        [InlineKeyboardButton("🕌 مواقيت الصلاة", callback_data="feat:prayer")],
         [InlineKeyboardButton("🌅 أذكار الصباح", callback_data="feat:sabah")],
         [InlineKeyboardButton("🌙 أذكار المساء", callback_data="feat:masa")],
         [InlineKeyboardButton("⏰ تذكير أذكار الصباح", callback_data="feat:sabah_rem")],
@@ -242,6 +356,20 @@ async def feature_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if feat == "radio_menu":
         await send_radio_menu(query.message)
+        return
+    elif feat == "calendar":
+        try:
+            data, city_label = get_calendar_data(user_id)
+            await query.message.reply_text(format_calendar_message(data, city_label))
+        except Exception as e:
+            await query.message.reply_text(f"❌ حصل خطأ: {e}")
+        return
+    elif feat == "prayer":
+        try:
+            data, city_label = get_calendar_data(user_id)
+            await query.message.reply_text(f"🕌 مواقيت الصلاة - {city_label}\n━━━━━━━━━━━━━━\n\n{get_next_prayer_text(data)}")
+        except Exception as e:
+            await query.message.reply_text(f"❌ حصل خطأ: {e}")
         return
     elif feat == "listen" or feat == "read":
         context.user_data['mode'] = 'read'
@@ -459,6 +587,57 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🏠 القائمة الرئيسية":
         context.user_data['mode'] = None
         await update.message.reply_text("القائمة الرئيسية:", reply_markup=main_keyboard())
+        return
+
+    # ===== التقويم والمواقيت - جديد =====
+    if text == "📅 التقويم والمواقيت":
+        try:
+            data, city_label = get_calendar_data(user_id)
+            await update.message.reply_text(format_calendar_message(data, city_label))
+        except Exception as e:
+            await update.message.reply_text(f"❌ حصل خطأ: {e}")
+        return
+
+    if text == "🕌 مواقيت الصلاة":
+        try:
+            data, city_label = get_calendar_data(user_id)
+            await update.message.reply_text(f"🕌 مواقيت الصلاة - {city_label}\n━━━━━━━━━━━━━━\n\n{get_next_prayer_text(data)}\n\nللمواقيت كاملة دوس 📅 التقويم والمواقيت")
+        except Exception as e:
+            await update.message.reply_text(f"❌ حصل خطأ: {e}")
+        return
+
+    if text == "📍 ابعت موقعك للمواقيت":
+        await update.message.reply_text(
+            "📍 ابعت موقعك عشان المواقيت تبقى مظبوطة 100%\n\n"
+            "دوس على 📎 (المشبك) تحت > Location > Send My Current Location\n\n"
+            "أو لو مش عايز تبعت موقعك، دوس 🏙️ تغيير مدينتي واكتب اسم مدينتك",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🏠 القائمة الرئيسية")]], resize_keyboard=True)
+        )
+        return
+
+    if text == "🏙️ تغيير مدينتي":
+        context.user_data['mode'] = 'ask_city_calendar'
+        await update.message.reply_text(
+            "🏙️ تغيير مدينتي\n\n"
+            "اكتب اسم مدينتك 👇\n\n"
+            "مثال: سوهاج - القاهرة - الرياض - جدة - بغداد - الجزائر\n\n"
+            "اكتب اسم مدينتك وابعتها",
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("🏠 القائمة الرئيسية")]], resize_keyboard=True)
+        )
+        return
+
+    if context.user_data.get('mode') == 'ask_city_calendar':
+        city = text.strip()
+        user_city[user_id] = city
+        if user_id in user_coords:
+            del user_coords[user_id]
+        context.user_data['mode'] = None
+        await update.message.reply_text(f"✅ تم ضبط المدينة على: {city}\nجاري جلب التقويم والمواقيت...")
+        try:
+            data, city_label = get_calendar_data(user_id)
+            await update.message.reply_text(format_calendar_message(data, city_label), reply_markup=main_keyboard())
+        except:
+            await update.message.reply_text(f"✅ تم حفظ {city}", reply_markup=main_keyboard())
         return
 
     # ===== الراديو =====
@@ -864,8 +1043,12 @@ async def reciter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("today", today_cmd))
+    app.add_handler(CommandHandler("prayer", prayer_cmd))
+    app.add_handler(CommandHandler("setcity", setcity_cmd))
     app.add_handler(CallbackQueryHandler(reciter_callback, pattern="^reciter:"))
     app.add_handler(CallbackQueryHandler(feature_callback, pattern="^feat:"))
+    app.add_handler(MessageHandler(filters.LOCATION, location_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     print("Bot is running...")
     app.run_polling()
