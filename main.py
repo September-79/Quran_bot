@@ -7,7 +7,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-# ===== إشعار مستخدم جديد =====
 ADMIN_ID = 9282627342
 try:
     with open("users.json", "r") as f:
@@ -292,6 +291,28 @@ def get_next_prayer_text(data):
             return f"⏰ الصلاة الجاية: {name}\n🕐 الساعة: {t}\n⏳ باقي عليها: {hh} ساعة و {mm} دقيقة"
     return f"⏰ الصلاة الجاية: الفجر بكرة\n🕐 الساعة: {clean_prayer_time(timings['Fajr'])}"
 
+# ===== دالة معلومات السورة - مشتركة =====
+def build_surah_info(n, text, reciter_name, style_name):
+    try:
+        data = requests.get(f"https://api.alquran.cloud/v1/surah/{n}/quran-uthmani", timeout=15).json()['data']
+        revelation = data.get('revelationType', '')
+        if revelation == 'Meccan':
+            revelation_ar = "مكية 🕋"
+        elif revelation == 'Medinan':
+            revelation_ar = "مدنية 🕌"
+        else:
+            revelation_ar = revelation
+        num_ayahs = data.get('numberOfAyahs', len(data['ayahs']))
+        english_name = data.get('englishName', '')
+    except:
+        revelation_ar = ""
+        num_ayahs = ""
+        english_name = ""
+    info = SURAH_INFO.get(text, {})
+    virtue = info.get('virtue', 'سورة من سور القرآن الكريم، فيها الهدى والنور والشفاء.')
+    reason = info.get('reason', 'نزلت على النبي ﷺ هدى للناس وبينات من الهدى والفرقان.')
+    return f"📋 معلومات عن سورة {text}:\n━━━━━━━━━━━━━━\n• النوع: {revelation_ar}\n• عدد الآيات: {num_ayahs} آية\n• ترتيبها في المصحف: {n}\n• اسمها بالإنجليزية: {english_name}\n• القارئ: {reciter_name} - {style_name}\n\n🌟 فضلها:\n{virtue}\n\n📖 سبب نزولها:\n{reason}"
+
 async def today_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         data, city_label = get_calendar_data(update.effective_user.id)
@@ -321,12 +342,10 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(f"📊 عدد المستخدمين: {len(KNOWN_USERS)}\n🆔 ID بتاعك: {ADMIN_ID}")
 
-# ================= BROADCAST - جديد =================
 async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ الأمر ده للأدمن بس")
         return
-    # الطريقة 1: رد على رسالة (صورة / فيديو / نص / صوت)
     if update.message.reply_to_message:
         msg = update.message.reply_to_message
         await update.message.reply_text(f"📢 جاري إرسال الرسالة لـ {len(KNOWN_USERS)} مستخدم ...")
@@ -341,15 +360,8 @@ async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 failed += 1
         await update.message.reply_text(f"✅ تم الإرسال!\n\n📊 نجح: {success}\n❌ فشل (عملوا بلوك): {failed}\n📊 الكلي: {len(KNOWN_USERS)}")
         return
-    # الطريقة 2: /broadcast نص
     if not context.args:
-        await update.message.reply_text(
-            "📢 طريقة استخدام /broadcast:\n\n"
-            "1️⃣ نص:\n"
-            "/broadcast السلام عليكم، جمعة مباركة 🤍\n\n"
-            "2️⃣ صورة / فيديو / صوت:\n"
-            "ابعت الصورة للبوت، وبعدين اعمل Reply عليها واكتب /broadcast"
-        )
+        await update.message.reply_text("📢 طريقة استخدام /broadcast:\n\n1️⃣ نص:\n/broadcast السلام عليكم، جمعة مباركة 🤍\n\n2️⃣ صورة / فيديو / صوت:\nابعت الصورة للبوت، وبعدين اعمل Reply عليها واكتب /broadcast")
         return
     text = " ".join(context.args)
     await update.message.reply_text(f"📢 جاري إرسال الرسالة لـ {len(KNOWN_USERS)} مستخدم ...")
@@ -374,7 +386,6 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("✅ تم حفظ موقعك!\nدلوقتي المواقيت حسب مكانك بالظبط.\nجرب 📅 التقويم والمواقيت أو دوس ⏰ تذكير كل الصلوات", reply_markup=main_keyboard())
 
-# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if user and user.id not in KNOWN_USERS:
@@ -449,7 +460,16 @@ async def feature_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif feat == "prayer_rem":
         await query.message.reply_text("دوس على زرار ⏰ تذكير كل الصلوات من القايمة اللي تحت 👇", reply_markup=main_keyboard())
         return
-    elif feat == "listen" or feat == "read":
+    elif feat == "listen":
+        context.user_data['mode'] = 'listen'
+        code_now = user_reciter.get(user_id, "ar.abdulbasitmurattal")
+        if code_now == "ar.muhammadrafat":
+            await query.message.reply_text("اختر من السور المتوفرة بصوت الشيخ محمد رفعت 👇", reply_markup=rifaat_keyboard())
+        elif code_now == "abdulbasit_rare":
+            await query.message.reply_text("اختر التلاوة النادرة 👇", reply_markup=rare_keyboard())
+        else:
+            await query.message.reply_text("🎧 اختر السورة اللي عايز تسمعها 👇", reply_markup=surah_keyboard())
+    elif feat == "read":
         context.user_data['mode'] = 'read'
         code_now = user_reciter.get(user_id, "ar.abdulbasitmurattal")
         if code_now == "ar.muhammadrafat":
@@ -457,7 +477,7 @@ async def feature_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif code_now == "abdulbasit_rare":
             await query.message.reply_text("اختر التلاوة النادرة 👇", reply_markup=rare_keyboard())
         else:
-            await query.message.reply_text("اختر السورة 👇", reply_markup=surah_keyboard())
+            await query.message.reply_text("📖 اختر السورة اللي عايز تقرأها 👇", reply_markup=surah_keyboard())
     elif feat == "tafsir":
         context.user_data['mode'] = 'tafsir'
         await query.message.reply_text("اختر السورة اللي عايز تفسيرها 👇", reply_markup=surah_keyboard())
@@ -737,8 +757,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "✨ عبدالباسط - مجود":
         user_reciter[user_id] = "abdulbasit_mujawwad"
-        context.user_data['mode'] = 'read'
-        await update.message.reply_text("✨ المصحف المجود - عبدالباسط عبدالصمد 🤍\n\nاختر السورة 👇", reply_markup=surah_keyboard())
+        context.user_data['mode'] = 'listen'
+        await update.message.reply_text("✨ المصحف المجود - عبدالباسط عبدالصمد 🤍\n\nاختر السورة اللي عايز تسمعها 👇", reply_markup=surah_keyboard())
         return
 
     if text == "💎 تلاوات نادرة":
@@ -755,7 +775,29 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"اسمعها من هنا:\n{url}")
         return
 
-    if text in ["🎧 الاستماع للقرآن", "📖 قراءة السورة", "🔍 بحث باسم السورة"]:
+    if text == "🎧 الاستماع للقرآن":
+        context.user_data['mode'] = 'listen'
+        code_now = user_reciter.get(user_id, "ar.abdulbasitmurattal")
+        if code_now == "ar.muhammadrafat":
+            await update.message.reply_text("اختر من السور المتوفرة بصوت الشيخ محمد رفعت 👇", reply_markup=rifaat_keyboard())
+        elif code_now == "abdulbasit_rare":
+            await update.message.reply_text("اختر التلاوة النادرة 👇", reply_markup=rare_keyboard())
+        else:
+            await update.message.reply_text("🎧 اختر السورة اللي عايز تسمعها 👇", reply_markup=surah_keyboard())
+        return
+
+    if text == "📖 قراءة السورة":
+        context.user_data['mode'] = 'read'
+        code_now = user_reciter.get(user_id, "ar.abdulbasitmurattal")
+        if code_now == "ar.muhammadrafat":
+            await update.message.reply_text("اختر من السور المتوفرة بصوت الشيخ محمد رفعت 👇", reply_markup=rifaat_keyboard())
+        elif code_now == "abdulbasit_rare":
+            await update.message.reply_text("اختر التلاوة النادرة 👇", reply_markup=rare_keyboard())
+        else:
+            await update.message.reply_text("📖 اختر السورة اللي عايز تقرأها 👇", reply_markup=surah_keyboard())
+        return
+
+    if text == "🔍 بحث باسم السورة":
         context.user_data['mode'] = 'read'
         code_now = user_reciter.get(user_id, "ar.abdulbasitmurattal")
         if code_now == "ar.muhammadrafat":
@@ -975,72 +1017,71 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("حصلت مشكلة في التفسير، حاول تاني")
             context.user_data['mode'] = 'read'
             return
-        msg = await update.message.reply_text(f"لقد اخترت سورة {text} من القارئ {reciter_name} - {style_name} برواية حفص عن عاصم، جاري التحميل ..")
-        try:
-            data = requests.get(f"https://api.alquran.cloud/v1/surah/{n}/quran-uthmani").json()['data']
-            ayahs = data['ayahs']
-            revelation = data.get('revelationType', '')
-            if revelation == 'Meccan':
-                revelation_ar = "مكية 🕋"
-            elif revelation == 'Medinan':
-                revelation_ar = "مدنية 🕌"
-            else:
-                revelation_ar = revelation
-            num_ayahs = data.get('numberOfAyahs', len(ayahs))
-            english_name = data.get('englishName', '')
-            info = SURAH_INFO.get(text, {})
-            virtue = info.get('virtue', 'سورة من سور القرآن الكريم، فيها الهدى والنور والشفاء.')
-            reason = info.get('reason', 'نزلت على النبي ﷺ هدى للناس وبينات من الهدى والفرقان.')
-            info_text = (f"📋 معلومات عن سورة {text}:\n━━━━━━━━━━━━━━\n• النوع: {revelation_ar}\n• عدد الآيات: {num_ayahs} آية\n• ترتيبها في المصحف: {n}\n• اسمها بالإنجليزية: {english_name}\n• القارئ: {reciter_name} - {style_name}\n\n🌟 فضلها:\n{virtue}\n\n📖 سبب نزولها:\n{reason}")
+
+        # ===== التعديل الجديد هنا =====
+        # 1- الاستماع: معلومات + صوت فقط
+        if mode == 'listen':
+            msg = await update.message.reply_text(f"🎧 جاري تحميل سورة {text} - {reciter_name} ...")
+            # المعلومات أولا
+            info_text = build_surah_info(n, text, reciter_name, style_name)
             await update.message.reply_text(info_text)
-            header = f"✦ ━━━━ سورة {text} ━━━━ ✦\n\n"
-            if n != 9:
-                header += "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ\n\n"
-            footer = "\n\n━━━ صدق الله العظيم ━━━"
-            chunks = []
-            current = header
-            for a in ayahs:
-                t = a['text']
-                if a['numberInSurah'] == 1 and n not in [1, 9]:
-                    t = t.replace("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", "").strip()
-                line = f"{t} ﴿{to_arabic_num(a['numberInSurah'])}﴾ "
-                if len(current) + len(line) > 3800:
-                    chunks.append(current)
-                    current = ""
-                current += line
-            current += footer
-            chunks.append(current)
-            for idx, chunk in enumerate(chunks, 1):
-                if len(chunks) > 1:
-                    await update.message.reply_text(f"— جزء {idx}/{len(chunks)} —\n\n{chunk}")
-                else:
-                    await update.message.reply_text(chunk)
-        except Exception as e:
-            await update.message.reply_text("حصلت مشكلة في تحميل النص، حاول تاني")
-        audio_url = get_audio_url(code, n)
-        if code == "ar.muhammadrafat" and audio_url is None:
-            await update.message.reply_text(f"⚠️ سورة {text} مش متوفرة بصوت الشيخ محمد رفعت حاليا\nجرب سورة تانية، أو اسمعها بصوت عبدالباسط 👇")
+            # الصوت بعدها
+            audio_url = get_audio_url(code, n)
+            if code == "ar.muhammadrafat" and audio_url is None:
+                await update.message.reply_text(f"⚠️ سورة {text} مش متوفرة بصوت الشيخ محمد رفعت حاليا")
+                try:
+                    await update.message.reply_audio(audio=f"https://cdn.islamic.network/quran/audio-surah/128/ar.abdulbasitmurattal/{n}.mp3", title=text, performer="عبدالباسط عبدالصمد", caption=f"🎧 سورة {text} - عبدالباسط عبدالصمد")
+                except:
+                    pass
+            else:
+                try:
+                    await update.message.reply_audio(audio=audio_url, title=text, performer=f"{reciter_name} - {style_name}", caption=f"🎧 سورة {text} - {reciter_name} - {style_name}")
+                except Exception as e:
+                    print(f"Audio error: {e}")
+                    await update.message.reply_text("⚠️ الصوت مش متوفر دلوقتي، جرب تاني")
             try:
-                await update.message.reply_audio(audio=f"https://cdn.islamic.network/quran/audio-surah/128/ar.abdulbasitmurattal/{n}.mp3", title=text, performer="عبدالباسط عبدالصمد", caption=f"🎧 سورة {text} - عبدالباسط عبدالصمد")
+                await msg.delete()
             except:
                 pass
-        else:
+            return
+
+        # 2- القراءة: معلومات + نص فقط - من غير صوت
+        if mode == 'read':
+            msg = await update.message.reply_text(f"📖 جاري تحميل سورة {text} ...")
+            info_text = build_surah_info(n, text, reciter_name, style_name)
+            await update.message.reply_text(info_text)
             try:
-                await update.message.reply_audio(audio=audio_url, title=text, performer=f"{reciter_name} - {style_name}", caption=f"🎧 سورة {text} - {reciter_name} - {style_name}")
-            except Exception as e:
-                print(f"Audio error {reciter_name} {style_name} surah {n}: {e} - URL was: {audio_url}")
-                if code == "ar.muhammadrafat":
-                    await update.message.reply_text(f"⚠️ سورة {text} مش متوفرة بصوت الشيخ محمد رفعت حاليا")
-                    try:
-                        await update.message.reply_audio(audio=f"https://cdn.islamic.network/quran/audio-surah/128/ar.abdulbasitmurattal/{n}.mp3", title=text, performer="عبدالباسط عبدالصمد", caption=f"🎧 سورة {text} - عبدالباسط عبدالصمد")
-                    except:
-                        pass
-                else:
-                    await update.message.reply_text("⚠️ الصوت مش متوفر دلوقتي، النص اتبعت كامل فوق 👆")
-        try:
-            await msg.delete()
-        except:
-            pass
+                data = requests.get(f"https://api.alquran.cloud/v1/surah/{n}/quran-uthmani").json()['data']
+                ayahs = data['ayahs']
+                header = f"✦ ━━━━ سورة {text} ━━━━ ✦\n\n"
+                if n != 9:
+                    header += "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ\n\n"
+                footer = "\n\n━━━ صدق الله العظيم ━━━"
+                chunks = []
+                current = header
+                for a in ayahs:
+                    t = a['text']
+                    if a['numberInSurah'] == 1 and n not in [1, 9]:
+                        t = t.replace("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", "").strip()
+                    line = f"{t} ﴿{to_arabic_num(a['numberInSurah'])}﴾ "
+                    if len(current) + len(line) > 3800:
+                        chunks.append(current)
+                        current = ""
+                    current += line
+                current += footer
+                chunks.append(current)
+                for idx, chunk in enumerate(chunks, 1):
+                    if len(chunks) > 1:
+                        await update.message.reply_text(f"— جزء {idx}/{len(chunks)} —\n\n{chunk}")
+                    else:
+                        await update.message.reply_text(chunk)
+            except:
+                await update.message.reply_text("حصلت مشكلة في تحميل النص، حاول تاني")
+            try:
+                await msg.delete()
+            except:
+                pass
+            return
         return
     await update.message.reply_text("اكتب اسم سورة صحيح أو اختر من القائمة 👇", reply_markup=surah_keyboard())
 
