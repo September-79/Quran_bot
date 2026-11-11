@@ -1,9 +1,26 @@
 import os
+import json
 import requests
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 
 TOKEN = os.getenv("BOT_TOKEN")
+
+# ===== إشعار مستخدم جديد =====
+ADMIN_ID = 9282627342
+# تحميل المستخدمين القدام عشان الإشعار ميتبعتش مرتين
+try:
+    with open("users.json", "r") as f:
+        KNOWN_USERS = set(json.load(f))
+except:
+    KNOWN_USERS = set()
+
+def save_users():
+    try:
+        with open("users.json", "w") as f:
+            json.dump(list(KNOWN_USERS), f)
+    except:
+        pass
 
 SURAHS = ["الفاتحة","البقرة","آل عمران","النساء","المائدة","الأنعام","الأعراف","الأنفال","التوبة","يونس","هود","يوسف","الرعد","ابراهيم","الحجر","النحل","الإسراء","الكهف","مريم","طه","الأنبياء","الحج","المؤمنون","النور","الفرقان","الشعراء","النمل","القصص","العنكبوت","الروم","لقمان","السجدة","الأحزاب","سبأ","فاطر","يس","الصافات","ص","الزمر","غافر","فصلت","الشورى","الزخرف","الدخان","الجاثية","الأحقاف","محمد","الفتح","الحجرات","ق","الذاريات","الطور","النجم","القمر","الرحمن","الواقعة","الحديد","المجادلة","الحشر","الممتحنة","الصف","الجمعة","المنافقون","التغابن","الطلاق","التحريم","الملك","القلم","الحاقة","المعارج","نوح","الجن","المزمل","المدثر","القيامة","الانسان","المرسلات","النبأ","النازعات","عبس","التكوير","الإنفطار","المطففين","الإنشقاق","البروج","الطارق","الأعلى","الغاشية","الفجر","البلد","الشمس","الليل","الضحى","الشرح","التين","العلق","القدر","البينة","الزلزلة","العاديات","القارعة","التكاثر","العصر","الهمزة","الفيل","قريش","الماعون","الكوثر","الكافرون","النصر","المسد","الإخلاص","الفلق","الناس"]
 
@@ -78,7 +95,6 @@ for _sheikh, _styles in SHEIKHS.items():
     for _style, _code in _styles.items():
         RECITERS[f"{_sheikh} - {_style}"] = _code
 
-# ===== فيكس Button_data_invalid: أكواد قصيرة عشان callback_data ميعديش 64 بايت =====
 SHEIKH_IDS = {
     "s0": "عبدالباسط عبدالصمد",
     "s1": "مشاري راشد العفاسي",
@@ -254,7 +270,6 @@ def main_keyboard():
         [KeyboardButton("⏰ تذكير الكهف"), KeyboardButton("❌ إلغاء التذكيرات")],
     ], resize_keyboard=True)
 
-# ================= التقويم + مواقيت الصلاة =================
 def clean_prayer_time(t):
     return t.split(" ")[0]
 
@@ -339,6 +354,11 @@ async def setcity_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del user_coords[update.effective_user.id]
     await update.message.reply_text(f"✅ تم ضبط المدينة على: {city}\nجرب /today", reply_markup=main_keyboard())
 
+async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text(f"📊 عدد المستخدمين: {len(KNOWN_USERS)}\n🆔 ID بتاعك: {ADMIN_ID}")
+
 async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loc = update.message.location
     user_coords[update.effective_user.id] = {"lat": loc.latitude, "lon": loc.longitude}
@@ -346,6 +366,32 @@ async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # ===== إشعار مستخدم جديد =====
+    user = update.effective_user
+    # لو الرسالة جاية من زرار مش من /start، update.message ممكن يكون None، فنتأكد
+    if user and user.id not in KNOWN_USERS:
+        KNOWN_USERS.add(user.id)
+        save_users()
+        if user.id != ADMIN_ID:
+            try:
+                from datetime import datetime
+                now = datetime.now().strftime("%Y-%m-%d %H:%M")
+                username = f"@{user.username}" if user.username else "مفيش يوزر"
+                full_name = user.full_name
+                await context.bot.send_message(
+                    chat_id=ADMIN_ID,
+                    text=f"🔔 مستخدم جديد في البوت!\n"
+                         f"━━━━━━━━━━━━━━\n"
+                         f"👤 الاسم: {full_name}\n"
+                         f"🆔 ID: {user.id}\n"
+                         f"👤 يوزر: {username}\n"
+                         f"🌍 اللغة: {user.language_code}\n"
+                         f"🕐 الوقت: {now}\n"
+                         f"📊 عدد المستخدمين الكلي: {len(KNOWN_USERS)}"
+                )
+            except Exception as e:
+                print(f"Notify admin error: {e}")
+
     text = (
         "أهلاً بيك في بوت القرآن الكريم 🤍\n"
         "━━━━━━━━━━━━━━\n"
@@ -954,7 +1000,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("اكتب اسم سورة صحيح أو اختر من القائمة 👇", reply_markup=surah_keyboard())
 
-# ================= اختيار القارئ - خطوتين: شيخ -> نوع - بالفيكس =================
 async def reciter_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1008,6 +1053,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("today", today_cmd))
     app.add_handler(CommandHandler("prayer", prayer_cmd))
     app.add_handler(CommandHandler("setcity", setcity_cmd))
+    app.add_handler(CommandHandler("stats", stats_cmd))
     app.add_handler(CallbackQueryHandler(reciter_callback, pattern="^(sh:|st:|back_sheikhs|reciter:)"))
     app.add_handler(CallbackQueryHandler(feature_callback, pattern="^feat:"))
     app.add_handler(MessageHandler(filters.LOCATION, location_handler))
