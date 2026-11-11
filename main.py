@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 import requests
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
@@ -320,10 +321,52 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(f"📊 عدد المستخدمين: {len(KNOWN_USERS)}\n🆔 ID بتاعك: {ADMIN_ID}")
 
+# ================= BROADCAST - جديد =================
+async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ الأمر ده للأدمن بس")
+        return
+    # الطريقة 1: رد على رسالة (صورة / فيديو / نص / صوت)
+    if update.message.reply_to_message:
+        msg = update.message.reply_to_message
+        await update.message.reply_text(f"📢 جاري إرسال الرسالة لـ {len(KNOWN_USERS)} مستخدم ...")
+        success = 0
+        failed = 0
+        for uid in list(KNOWN_USERS):
+            try:
+                await context.bot.copy_message(chat_id=uid, from_chat_id=msg.chat_id, message_id=msg.message_id)
+                success += 1
+                await asyncio.sleep(0.05)
+            except:
+                failed += 1
+        await update.message.reply_text(f"✅ تم الإرسال!\n\n📊 نجح: {success}\n❌ فشل (عملوا بلوك): {failed}\n📊 الكلي: {len(KNOWN_USERS)}")
+        return
+    # الطريقة 2: /broadcast نص
+    if not context.args:
+        await update.message.reply_text(
+            "📢 طريقة استخدام /broadcast:\n\n"
+            "1️⃣ نص:\n"
+            "/broadcast السلام عليكم، جمعة مباركة 🤍\n\n"
+            "2️⃣ صورة / فيديو / صوت:\n"
+            "ابعت الصورة للبوت، وبعدين اعمل Reply عليها واكتب /broadcast"
+        )
+        return
+    text = " ".join(context.args)
+    await update.message.reply_text(f"📢 جاري إرسال الرسالة لـ {len(KNOWN_USERS)} مستخدم ...")
+    success = 0
+    failed = 0
+    for uid in list(KNOWN_USERS):
+        try:
+            await context.bot.send_message(chat_id=uid, text=text)
+            success += 1
+            await asyncio.sleep(0.05)
+        except:
+            failed += 1
+    await update.message.reply_text(f"✅ تم الإرسال!\n\n📊 نجح: {success}\n❌ فشل (عملوا بلوك): {failed}\n📊 الكلي: {len(KNOWN_USERS)}")
+
 async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loc = update.message.location
     user_coords[update.effective_user.id] = {"lat": loc.latitude, "lon": loc.longitude}
-    # لو كان مفعل تذكير كل الصلوات، حدث مواعيده على الموقع الجديد
     chat_id = update.effective_chat.id
     if context.job_queue.get_jobs_by_name(f"prayer_Fajr_{chat_id}"):
         await schedule_prayer_reminders(context, chat_id, update.effective_user.id)
@@ -482,7 +525,6 @@ async def send_masa_reminder(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text=z)
     await context.bot.send_message(chat_id=chat_id, text="━━━ تقبل الله منا ومنكم مساءكم ذكر 🤍 ━━━", reply_markup=main_keyboard())
 
-# ================= تذكير كل الصلوات - جديد =================
 PRAYERS_LIST = [("الفجر","Fajr","🌅"),("الظهر","Dhuhr","☀️"),("العصر","Asr","🌤️"),("المغرب","Maghrib","🌇"),("العشاء","Isha","🌙")]
 
 def subtract_minutes(time_str, mins):
@@ -507,7 +549,6 @@ async def send_prayer_now(context: ContextTypes.DEFAULT_TYPE):
 
 async def schedule_prayer_reminders(context, chat_id, user_id):
     import datetime
-    # امسح القديم
     for name_ar, key, emoji in PRAYERS_LIST:
         for suffix in ["before", "now"]:
             for j in context.job_queue.get_jobs_by_name(f"prayer_{key}_{suffix}_{chat_id}"):
@@ -520,9 +561,7 @@ async def schedule_prayer_reminders(context, chat_id, user_id):
             t_str = clean_prayer_time(timings[key])
             h, m = map(int, t_str.split(":"))
             bh, bm = subtract_minutes(t_str, 10)
-            # قبل بـ 10 دقايق
             context.job_queue.run_daily(send_prayer_before, time=datetime.time(hour=bh, minute=bm), chat_id=chat_id, name=f"prayer_{key}_before_{chat_id}", data={"name": name_ar, "emoji": emoji, "time": t_str})
-            # وقت الصلاة نفسه
             context.job_queue.run_daily(send_prayer_now, time=datetime.time(hour=h, minute=m), chat_id=chat_id, name=f"prayer_{key}_now_{chat_id}", data={"name": name_ar, "emoji": emoji})
             lines.append(f"{emoji} {name_ar}: {t_str} (تنبيه {bh:02d}:{bm:02d})")
         await ensure_daily_update_job(context, chat_id)
@@ -596,7 +635,6 @@ async def update_prayer_jobs(context: ContextTypes.DEFAULT_TYPE):
     import datetime
     chat_id = context.job.chat_id
     city = user_city.get(chat_id, "Cairo")
-    # حدث تذكير كل الصلوات لو كان شغال
     if context.job_queue.get_jobs_by_name(f"prayer_Fajr_before_{chat_id}"):
         await schedule_prayer_reminders(context, chat_id, chat_id)
     if context.job_queue.get_jobs_by_name(f"waqia_{chat_id}"):
@@ -687,7 +725,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             data, city_label = get_calendar_data(user_id)
             await update.message.reply_text(format_calendar_message(data, city_label), reply_markup=main_keyboard())
-            # لو تذكير الصلوات شغال، حدثه
             if context.job_queue.get_jobs_by_name(f"prayer_Fajr_before_{chat_id}"):
                 await schedule_prayer_reminders(context, chat_id, user_id)
         except:
@@ -753,7 +790,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(z)
         return
 
-    # ===== تذكير كل الصلوات - جديد =====
     if text == "⏰ تذكير كل الصلوات":
         if user_id in user_city or user_id in user_coords:
             await update.message.reply_text("🕌 جاري ضبط تذكير كل الصلوات على موقعك ...")
@@ -847,7 +883,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "❌ إلغاء التذكيرات":
         try:
-            # الغاء تذكير الصلوات
             for name_ar, key, emoji in PRAYERS_LIST:
                 for suffix in ["before", "now"]:
                     for j in context.job_queue.get_jobs_by_name(f"prayer_{key}_{suffix}_{chat_id}"):
@@ -1059,6 +1094,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("prayer", prayer_cmd))
     app.add_handler(CommandHandler("setcity", setcity_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("broadcast", broadcast_cmd))
     app.add_handler(CallbackQueryHandler(reciter_callback, pattern="^(sh:|st:|back_sheikhs|reciter:)"))
     app.add_handler(CallbackQueryHandler(feature_callback, pattern="^feat:"))
     app.add_handler(MessageHandler(filters.LOCATION, location_handler))
